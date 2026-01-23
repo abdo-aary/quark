@@ -135,3 +135,46 @@ QRCMaternKRRRegressor --> MaternTuner : tunes (per output)
 - **`src.qrc.run`**: provides runners and feature-map retrievers (`BaseCircuitsRunner`, `BaseFeatureMapsRetriever`).
 - **`src.data`**: provides dataset builders/loaders that output `X` windows and one or many label arrays.
 
+---
+
+## Minimal usage example
+
+Below is a minimal end-to-end example that:
+
+1. builds the model from a YAML config,
+2. fits *multiple* label functionals `Y` on the **same** quantum features `Φ`,
+3. returns predictions on the internal test split.
+
+```python
+import numpy as np
+from src.models.qrc_matern_krr import QRCMaternKRRRegressor
+
+# 1) Build from YAML (wires CircuitFactory + Runner + Retriever + tuning config)
+mdl = QRCMaternKRRRegressor.from_yaml("configs/qrc_matern_krr.yaml")
+
+# 2) Data: windows X and multiple labels Y
+rng = np.random.default_rng(0)
+N, w, d = 200, 20, 3
+X = rng.normal(size=(N, w, d)).astype(float)
+
+# Multi-output labels:
+# - preferred layout: (L, N)
+# - also accepted: (N, L)
+L = 3
+Y = rng.normal(size=(L, N)).astype(float)
+
+# 3) Fit (features Φ computed ONCE; tuning+KRR done once per output)
+mdl.fit(X, Y, num_workers=3)
+
+# 4) Predict on the held-out test split (cached during fit)
+Yhat = mdl.predict()          # shape: (L, N_test) if L>1
+print(Yhat.shape)
+
+# Optional: predict on new windows
+# Yhat_new = mdl.predict(X_new)   # X_new shape: (N_new, w, d)
+```
+
+**Notes**
+- If you only have one target `y` with shape `(N,)`, `fit(X, y)` and `predict()` return a 1D array `(N_test,)`.
+- `num_workers` is effectively capped by the number of outputs `L` to avoid spawning idle processes.
+
