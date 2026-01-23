@@ -28,7 +28,7 @@ It is intentionally lightweight and focused on:
    - a **runner** executes PUBs and returns `Results`,
    - a **feature map retriever** produces features `Φ ∈ R^{N×D}` using chosen observables.
 
-### Mermaid class diagram
+### High-level class diagram
 
 ```mermaid
 classDiagram
