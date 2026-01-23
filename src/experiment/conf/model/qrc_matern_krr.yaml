@@ -7,9 +7,9 @@ qrc:
 
   pubs:
     family: ising_ring_swap
-    angle_positioning: linear
+    angle_positioning: tanh       # linear
     num_reservoirs: 4
-    lam_0: 0.05
+    lam_0: 0.05        # Long memory for the first reservoir that should serve a wide variety of data.
     seed: 999
     eps: 1e-8
 

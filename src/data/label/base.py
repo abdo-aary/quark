@@ -40,5 +40,5 @@ class LabelNoise:
             return float(y) + float(rng.normal(loc=0.0, scale=self.std))
 
         y = np.asarray(y)
-        noise = rng.normal(loc=0.0, scale=self.std, size=Y.shape)
+        noise = rng.normal(loc=0.0, scale=self.std, size=y.shape)
         return y + noise

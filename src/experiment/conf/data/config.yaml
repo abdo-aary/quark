@@ -1,0 +1,14 @@
+defaults:
+  - sampling: default
+  - process: varma
+  - functionals: e2_three
+  - noise: none
+  - output: default
+  - _self_
+
+seed: 12345
+
+# Keep CWD stable (important so relative paths stay relative to repo root)
+hydra:
+  job:
+    chdir: false

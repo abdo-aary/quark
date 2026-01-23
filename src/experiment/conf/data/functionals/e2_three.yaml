@@ -1,0 +1,16 @@
+kind: e2_three
+items:
+  - _target_: src.data.label.functionals.OneStepForecastFunctional
+    nonlinearity: none
+    noise: ${noise.label}
+
+  - _target_: src.data.label.functionals.ExpFadingLinearFunctional
+    alpha: 0.8
+    nonlinearity: none
+    noise: ${noise.label}
+
+  - _target_: src.data.label.functionals.VolteraFunctional
+    alpha: 0.8
+    orthogonalize_v: true
+    nonlinearity: none
+    noise: ${noise.label}

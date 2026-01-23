@@ -1,0 +1,7 @@
+N: 1024
+w: 25
+d: 3
+s: 100
+burn_in: 200
+bounded: tanh      # tanh | clip | none
+clip: 0.999

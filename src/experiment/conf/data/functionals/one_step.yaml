@@ -1,0 +1,5 @@
+kind: one_step
+items:
+  - _target_: src.data.label.functionals.OneStepForecastFunctional
+    nonlinearity: none
+    noise: ${noise.label}

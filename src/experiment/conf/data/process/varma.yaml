@@ -1,0 +1,21 @@
+kind: varma
+generator:
+  _target_: src.data.generate.varma.VARMAGenerator
+  p: 2
+  q: 1
+  gamma: 0.7
+  eta: 0.5
+  rho: 0.5
+
+  innovation: normal
+  innovation_scale: 1.0
+  student_df: 5.0
+
+  regenerate_params_each_call: true
+
+  # wired from sampling/root:
+  s: ${sampling.s}
+  burn_in: ${sampling.burn_in}
+  bounded: ${sampling.bounded}
+  clip: ${sampling.clip}
+  seed: ${seed}

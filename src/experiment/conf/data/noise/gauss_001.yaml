@@ -1,0 +1,3 @@
+label:
+  _target_: src.data.label.base.LabelNoise
+  std: 0.01
