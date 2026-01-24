@@ -1,0 +1,6 @@
+defaults:
+  - data: config
+  - model: qrc_matern_krr
+  - _self_
+
+seed: 12345

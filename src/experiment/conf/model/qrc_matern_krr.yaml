@@ -1,51 +1,11 @@
-qrc:
-  cfg:
-    kind: ring
-    input_dim: 10
-    num_qubits: 3
-    seed: 12345
+defaults:
+  - qrc/cfg@qrc.cfg: ring
+  - qrc/runner@qrc.runner: exact_aer
+  - qrc/features/retriever@qrc.features.retriever: exact
+  - qrc/features/observables@qrc.features.observables: k_local_pauli
+  - qrc/pubs@qrc.pubs: ising_ring
+  - training@training: default
+  - tuning@tuning: grid
+  - _self_
 
-  pubs:
-    family: ising_ring_swap
-    angle_positioning: tanh       # linear
-    num_reservoirs: 4
-    lam_0: 0.05        # Long memory for the first reservoir that should serve a wide variety of data.
-    seed: 999
-    eps: 1e-8
-
-  runner:
-    kind: exact_aer
-    kwargs:
-      seed_simulator: 0
-      optimization_level: 1
-      device: CPU
-      max_parallel_threads: 0
-      max_parallel_experiments: 0
-      max_parallel_shots: 0
-
-  features:
-    kind: exact             # exact | cs
-    observables:
-      kind: k_local_pauli
-      locality: 2
-    kwargs: {}              # for cs: {shots: 2000, seed: 0, n_groups: 10}
-
-model:
-  preprocess:
-    standardize: true
-
-  split:
-    test_ratio: 0.2
-    seed: 0
-
-  tuning:
-    strategy: grid          # grid | powell
-    val_ratio: 0.2
-    seed: 0
-    reg: 1e-6
-    xi_bounds: [1e-3, 1e3]
-    nu_grid: [0.5, 1.5, 2.5, 5.0]
-    xi_maxiter: 80
-    # for powell:
-    # nu_bounds: [0.2, 5.0]
-    # n_restarts: 8
+kind: qrc_matern_krr

@@ -15,12 +15,13 @@ the ``num_workers`` argument of :meth:`QRCMaternKRRRegressor.fit` (feature extra
 """
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Tuple, Union
-
 import multiprocessing as mp
 
 import numpy as np
-import yaml
+from omegaconf import DictConfig, OmegaConf
+from hydra.utils import instantiate
+
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from sklearn.base import BaseEstimator, RegressorMixin
 from sklearn.preprocessing import StandardScaler
@@ -29,30 +30,47 @@ from sklearn.gaussian_process.kernels import Matern as SkMatern, ConstantKernel
 from src.models.kernel import tune_matern_grid_train_val, tune_matern_continuous_train_val
 from src.models.qrc_featurizer import QRCFeaturizer
 
-from src.qrc.circuits.configs import RingQRConfig
-from src.qrc.circuits.utils import generate_k_local_paulis
-from src.qrc.run.circuit_run import ExactAerCircuitsRunner
-from src.qrc.run.fmp_retriever import ExactFeatureMapsRetriever
-from src.qrc.run.cs_fmp_retriever import CSFeatureMapsRetriever
-
 from qiskit.quantum_info import SparsePauliOp
 
-# -----------------------------
-# Small registries (YAML -> impl)
-# -----------------------------
 
-_CFG_REGISTRY = {
-    "ring": RingQRConfig,
-}
+def _to_plain_dict(node) -> dict:
+    """
+    Convert an OmegaConf node to a plain dict safely.
 
-_RUNNER_REGISTRY = {
-    "exact_aer": ExactAerCircuitsRunner,
-}
+    Parameters
+    ----------
+    node : Any
+        OmegaConf node (DictConfig/ListConfig) or a Python object.
 
-_FMP_REGISTRY = {
-    "exact": ExactFeatureMapsRetriever,
-    "cs": CSFeatureMapsRetriever,
-}
+    Returns
+    -------
+    dict
+        Plain resolved dict, or {} if node is missing/None.
+    """
+    if node is None:
+        return {}
+    if OmegaConf.is_config(node):
+        return OmegaConf.to_container(node, resolve=True) or {}
+    if isinstance(node, dict):
+        return dict(node)
+    return {}
+
+
+def build_sparse_pauli_ops(labels: List[str]) -> List[SparsePauliOp]:
+    """
+    Build a list of Qiskit `SparsePauliOp` from string labels.
+
+    Parameters
+    ----------
+    labels : list of str
+        Pauli labels, e.g. ["XIZ", "ZZI"].
+
+    Returns
+    -------
+    list of SparsePauliOp
+        Qiskit Pauli operators.
+    """
+    return [SparsePauliOp(lab) for lab in labels]
 
 
 def _train_test_split_indices(N: int, test_ratio: float, seed: int) -> Tuple[np.ndarray, np.ndarray]:
@@ -225,6 +243,7 @@ class QRCMaternKRRRegressor(BaseEstimator, RegressorMixin):
     the same feature matrix. Per-output tuning+fit can be parallelized with multiprocessing using
     ``num_workers`` passed to :meth:`fit`.
     """
+
     def __init__(
             self,
             featurizer: QRCFeaturizer,
@@ -257,92 +276,78 @@ class QRCMaternKRRRegressor(BaseEstimator, RegressorMixin):
         self.n_outputs_: Optional[int] = None
 
     @staticmethod
-    def from_yaml(path: str) -> "QRCMaternKRRRegressor":
+    def from_config(cfg: DictConfig) -> "QRCMaternKRRRegressor":
         """
-        Construct a model from a YAML configuration file.
+        Construct a fully-wired regressor from an OmegaConf/Hydra config.
+
+        All objects are instantiated via Hydra using
+        `_target_` entries in the config.
 
         Parameters
         ----------
-        path : str
-            Path to a YAML file describing the QRC config, runner, feature retriever, pubs parameters,
-            and model hyperparameters.
+        cfg : omegaconf.DictConfig
+            Model configuration. This can be either:
+            - the model node itself (recommended): `cfg = composed_cfg.model`, or
+            - a full experiment config that contains a `model` section.
+
+            Expected structure (high level):
+
+            - `qrc.cfg`: Hydra instantiable circuit config (e.g., RingQRConfig)
+            - `qrc.runner`: Hydra instantiable runner class (constructed with qr_cfg)
+            - `qrc.runner_kwargs`: dict of kwargs forwarded to runner execution (not ctor)
+            - `qrc.features.retriever`: Hydra instantiable FMP retriever (qr_cfg, observables)
+            - `qrc.features.observables`: Hydra instantiable builder returning list[SparsePauliOp]
+            - `qrc.features.kwargs`: dict of kwargs forwarded to retriever execution (not ctor)
+            - `qrc.pubs`: contains `family`, `angle_positioning`, plus other PUBS kwargs
+            - `preprocess.standardize`, `split.test_ratio`, `split.seed`, `tuning` dict
 
         Returns
         -------
         QRCMaternKRRRegressor
-            A fully wired estimator (ready to call ``fit``).
+            A ready-to-fit estimator.
 
         Notes
         -----
-        This method is primarily used by smoke tests and experiments to ensure that kwargs (e.g. ``device="GPU"``)
-        are properly forwarded from YAML into the runner configuration.
+        We intentionally separate:
+        - constructor-time objects (runner, retriever) handled via `_target_`, and
+        - execution-time kwargs (`runner_kwargs`, `features.kwargs`) stored as plain dicts,
+          because these are not necessarily accepted by the constructors.
         """
-        with open(path, "r", encoding="utf-8") as f:
-            cfg = yaml.safe_load(f)
+        # Allow passing either the full cfg or cfg.model
+        model_cfg = cfg.model if "model" in cfg else cfg
 
-        # --- QR config
-        qrc_cfg = cfg["qrc"]["cfg"]
-        cfg_kind = qrc_cfg["kind"]
-        cfg_cls = _CFG_REGISTRY.get(cfg_kind)
-        if cfg_cls is None:
-            raise ValueError(f"Unknown qrc.cfg.kind={cfg_kind!r}")
-        qr_cfg = cfg_cls(
-            input_dim=int(qrc_cfg["input_dim"]),
-            num_qubits=int(qrc_cfg["num_qubits"]),
-            seed=int(qrc_cfg.get("seed", 0)),
-        )
+        qrc_cfg = model_cfg.qrc
 
-        # --- observables
-        obs_cfg = cfg["qrc"]["features"]["observables"]
-        if obs_cfg["kind"] == "k_local_pauli":
-            locality = int(obs_cfg["locality"])
-            observables = generate_k_local_paulis(locality=locality, num_qubits=qr_cfg.num_qubits)
-        elif obs_cfg["kind"] == "explicit_pauli":
-            labels = list(obs_cfg["labels"])
-            observables = [SparsePauliOp(lab) for lab in labels]
-        else:
-            raise ValueError(f"Unknown observables.kind={obs_cfg['kind']!r}")
+        # --- instantiate the quantum circuit config
+        qr_cfg = instantiate(qrc_cfg.cfg)
 
-        # --- runner
-        runner_cfg = cfg["qrc"]["runner"]
-        runner_cls = _RUNNER_REGISTRY.get(runner_cfg["kind"])
-        if runner_cls is None:
-            raise ValueError(f"Unknown runner.kind={runner_cfg['kind']!r}")
-        runner = runner_cls(qr_cfg)
-        runner_kwargs = dict(runner_cfg.get("kwargs", {}))
+        # --- observables: instantiate a builder that returns List[SparsePauliOp]
+        observables = instantiate(qrc_cfg.features.observables)
 
-        # --- feature maps retriever
-        fmp_cfg = cfg["qrc"]["features"]
-        fmp_kind = fmp_cfg["kind"]
-        fmp_cls = _FMP_REGISTRY.get(fmp_kind)
-        if fmp_cls is None:
-            raise ValueError(f"Unknown features.kind={fmp_kind!r}")
+        # --- runner and FMP retriever: instantiate with injected runtime args
+        runner = instantiate(qrc_cfg.runner, qr_cfg)
+        fmp = instantiate(qrc_cfg.features.retriever, qr_cfg, observables)
 
-        if fmp_kind == "exact":
-            fmp = fmp_cls(qr_cfg, observables)
-        elif fmp_kind == "cs":
-            # allows defaults like default_shots/default_n_groups in constructor if we want
-            fmp = fmp_cls(qr_cfg, observables)
-        else:
-            raise ValueError(f"Unhandled features.kind={fmp_kind!r}")
+        # --- kwargs (not ctor args)
+        runner_kwargs = _to_plain_dict(qrc_cfg.get("runner_kwargs"))
+        fmp_kwargs = _to_plain_dict(qrc_cfg.features.get("kwargs"))
 
-        fmp_kwargs = dict(fmp_cfg.get("kwargs", {}))
+        # --- PUBS config (family + angle positioning + remaining kwargs)
+        pubs_container = OmegaConf.to_container(qrc_cfg.pubs, resolve=True)
+        pubs_family = pubs_container["family"]
+        angle_positioning = pubs_container["angle_positioning"]
+        pubs_kwargs = {k: v for k, v in pubs_container.items() if k not in ("family", "angle_positioning")}
 
-        # --- pubs config
-        pubs_cfg = cfg["qrc"]["pubs"]
-        pubs_family = pubs_cfg["family"]
-        angle_positioning = pubs_cfg["angle_positioning"]
-        pubs_kwargs = dict(pubs_cfg)
-        pubs_kwargs.pop("family")
-        pubs_kwargs.pop("angle_positioning")
+        # --- model-level params
+        training = model_cfg.get("training", {})
+        split = training.get("split", {})
+        preprocess = training.get("preprocess", {})
 
-        # --- model config
-        model_cfg = cfg["model"]
-        standardize = bool(model_cfg.get("preprocess", {}).get("standardize", True))
-        split = model_cfg.get("split", {})
         test_ratio = float(split.get("test_ratio", 0.2))
         split_seed = int(split.get("seed", 0))
-        tuning = dict(model_cfg.get("tuning", {}))
+        standardize = bool(preprocess.get("standardize", True))
+
+        tuning = OmegaConf.to_container(model_cfg.get("tuning", {}), resolve=True) or {}
 
         featurizer = QRCFeaturizer(
             cfg=qr_cfg,
@@ -354,12 +359,13 @@ class QRCMaternKRRRegressor(BaseEstimator, RegressorMixin):
             runner_kwargs=runner_kwargs,
             fmp_kwargs=fmp_kwargs,
         )
+
         return QRCMaternKRRRegressor(
             featurizer,
             standardize=standardize,
             test_ratio=test_ratio,
             split_seed=split_seed,
-            tuning=tuning,
+            tuning=dict(tuning),
         )
 
     def fit(self, X: np.ndarray, y: np.ndarray, *, num_workers: int = 1):

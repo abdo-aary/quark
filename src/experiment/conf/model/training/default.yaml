@@ -1,0 +1,6 @@
+split:
+  test_ratio: 0.2
+  seed: 0
+
+preprocess:
+  standardize: true

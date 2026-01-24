@@ -1,0 +1,2 @@
+_target_: src.qrc.run.circuit_run.ExactAerCircuitsRunner
+# NOTE: qr_cfg is injected by from_config via instantiate(cfg, qr_cfg)

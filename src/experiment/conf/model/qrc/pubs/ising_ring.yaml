@@ -1,0 +1,8 @@
+family: ising_ring_swap
+angle_positioning: tanh
+
+# kwargs forwarded to CircuitFactory.create_pubs_dataset_reservoirs_IsingRingSWAP
+lam_0: 0.1
+num_reservoirs: 4
+seed: ${seed}
+eps: 1e-8

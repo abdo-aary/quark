@@ -1,0 +1,2 @@
+_target_: src.qrc.run.fmp_retriever.ExactFeatureMapsRetriever
+# qr_cfg and observables injected by from_config via instantiate(cfg, qr_cfg, observables)

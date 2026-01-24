@@ -1,0 +1,8 @@
+strategy: powell
+val_ratio: 0.2
+seed: 0
+reg: 1e-6
+xi_bounds: [1e-3, 1e3]
+nu_init: 1.5
+powell_maxiter: 100
+xi_maxiter: 80

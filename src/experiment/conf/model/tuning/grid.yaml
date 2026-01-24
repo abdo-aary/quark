@@ -1,0 +1,7 @@
+strategy: grid
+val_ratio: 0.2
+seed: 0
+reg: 1e-6
+xi_bounds: [1e-3, 1e3]
+nu_grid: [0.5, 1.5, 2.5, 5.0]
+xi_maxiter: 80
