@@ -12,3 +12,13 @@ seed: 12345
 hydra:
   job:
     chdir: false
+
+  run:
+    dir: ${output.save_dir}/output
+
+  job_logging:
+    handlers:
+      file:
+        filename: ${hydra.run.dir}/generate_data.log
+
+  output_subdir: .hydra

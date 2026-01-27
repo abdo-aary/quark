@@ -19,11 +19,19 @@ Notes
 - We set `hydra.job.chdir=false` in the config to keep the working directory stable.
 - This module defines :func:`run` as a pure entrypoint for unit tests.
 """
+import os
+from pathlib import Path
 
 import hydra
 from omegaconf import DictConfig
-
+from src.settings import PROJECT_ROOT_PATH
 from src.data.factory import generate_and_save_dataset
+import logging
+
+log = logging.getLogger(__name__)
+
+# Two levels above the directory you launched from
+os.environ["PROJECT_ROOT"] = str(Path(PROJECT_ROOT_PATH))
 
 
 def run(cfg: DictConfig):
@@ -59,7 +67,7 @@ def main(cfg: DictConfig) -> None:
         Writes dataset files to disk and prints a short confirmation message.
     """
     ds, art = run(cfg)
-    print(f"Saved X{ds.X.shape}, y{ds.y.shape} -> {art.data_path}")
+    log.info("Saved X%s, y%s -> %s", ds.X.shape, ds.y.shape, art.data_path)
 
 
 if __name__ == "__main__":

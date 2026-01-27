@@ -1,6 +1,8 @@
-save_dir: storage/data/synthetic/${process.kind}
-name: auto        # auto => factory will build a stable name from cfg
-format: npz       # npz | npy
+root_dir: ${oc.env:PROJECT_ROOT}
+save_dir: ${.root_dir}/storage/data/synthetic/${process.kind}
+
+name: auto
+format: npz
 overwrite: false
 save_meta: true
 save_config: true
