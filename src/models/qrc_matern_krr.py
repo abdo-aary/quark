@@ -16,7 +16,8 @@ the ``num_workers`` argument of :meth:`QRCMaternKRRRegressor.fit` (feature extra
 from __future__ import annotations
 
 import multiprocessing as mp
-
+from pathlib import Path
+import json
 import numpy as np
 from omegaconf import DictConfig, OmegaConf
 from hydra.utils import instantiate
@@ -31,6 +32,17 @@ from src.models.kernel import tune_matern_grid_train_val, tune_matern_continuous
 from src.models.qrc_featurizer import QRCFeaturizer
 
 from qiskit.quantum_info import SparsePauliOp
+
+_SAVE_FORMAT_VERSION = 1
+
+
+def _to_builtin(obj):
+    """Convert numpy scalars to builtin Python scalars for JSON serialization."""
+    if isinstance(obj, (np.integer,)):
+        return int(obj)
+    if isinstance(obj, (np.floating,)):
+        return float(obj)
+    return obj
 
 
 def _to_plain_dict(node) -> dict:
@@ -275,6 +287,10 @@ class QRCMaternKRRRegressor(BaseEstimator, RegressorMixin):
         self.best_params_: Optional[Union[Dict[str, float], List[Dict[str, float]]]] = None
         self.n_outputs_: Optional[int] = None
 
+        # Stored values to be reused
+        self.Phi_full_ = None
+        self.train_idx_, self.test_idx_ = None, None
+
     @staticmethod
     def from_config(cfg: DictConfig) -> "QRCMaternKRRRegressor":
         """
@@ -422,7 +438,11 @@ class QRCMaternKRRRegressor(BaseEstimator, RegressorMixin):
         Phi = self.featurizer.transform(X)  # (N,D)
 
         # split train_val vs test
-        tr_idx, te_idx = _train_test_split_indices(N, self.test_ratio, self.split_seed)
+        if not self.train_idx_ or not self.test_idx_:
+            tr_idx, te_idx = _train_test_split_indices(N, self.test_ratio, self.split_seed)
+        else:
+            tr_idx, te_idx = self.train_idx_, self.test_idx_
+
         Phi_tr = Phi[tr_idx]
         Phi_te = Phi[te_idx]
 
@@ -504,6 +524,10 @@ class QRCMaternKRRRegressor(BaseEstimator, RegressorMixin):
         # optional: compute & store test predictions immediately
         y_pred_te = self._predict_from_features(Phi_te)
         self.y_pred_test_ = y_pred_te
+
+        # Store for persistance
+        self.Phi_full_ = Phi
+        self.train_idx_, self.test_idx_ = tr_idx, te_idx
         return self
 
     def _predict_from_features(self, Phi: np.ndarray) -> np.ndarray:
@@ -587,3 +611,131 @@ class QRCMaternKRRRegressor(BaseEstimator, RegressorMixin):
 
         Phi = self.featurizer.transform(X)
         return self.predict_from_features(Phi, apply_scaler=True)
+
+    #######################################################################################
+    ##################################### PERSISTANCE #####################################
+    #######################################################################################
+
+    def save(self, path: str | Path) -> None:
+        """
+        Save FULL model artifact (no featurizer rerun required).
+        Stores: Phi_full_, train/test indices, best_params_, alpha_, scaler params.
+        """
+        path = Path(path)
+        path.mkdir(parents=True, exist_ok=True)
+
+        # --- sanity checks (fail fast) ---
+        required = ["best_params_", "alpha_"]
+        for name in required:
+            if getattr(self, name, None) is None:
+                raise ValueError(f"Cannot save: missing attribute `{name}` (did you fit the model?).")
+
+        if getattr(self, "Phi_full_", None) is None:
+            raise ValueError(
+                "Cannot save: missing `Phi_full_`. "
+                "Recommendation: in fit(), store the full features before splitting, e.g. `self.Phi_full_ = Phi`."
+            )
+        if getattr(self, "train_idx_", None) is None or getattr(self, "test_idx_", None) is None:
+            raise ValueError(
+                "Cannot save: missing `train_idx_`/`test_idx_`. "
+                "Recommendation: in fit(), store indices from train_test_split."
+            )
+
+        Phi_full = np.asarray(self.Phi_full_)
+        train_idx = np.asarray(self.train_idx_)
+        test_idx = np.asarray(self.test_idx_)
+        alpha = np.asarray(self.alpha_)
+
+        arrays: dict[str, np.ndarray] = {
+            "Phi_full": Phi_full,
+            "train_idx": train_idx,
+            "test_idx": test_idx,
+            "alpha": alpha,
+        }
+
+        if bool(getattr(self, "standardize", False)):
+            if getattr(self, "scaler_", None) is None:
+                raise ValueError("standardize=True but `scaler_` is None; cannot save a consistent artifact.")
+            scaler_mean = np.asarray(self.scaler_.mean_)
+            scaler_scale = np.asarray(self.scaler_.scale_)
+            arrays["scaler_mean"] = scaler_mean
+            arrays["scaler_scale"] = scaler_scale
+
+        meta = {
+            "format_version": _SAVE_FORMAT_VERSION,
+            "artifact": "QRCMaternKRRRegressor.full",
+            "standardize": bool(getattr(self, "standardize", False)),
+            "test_ratio": float(getattr(self, "test_ratio", 0.0)),
+            "split_seed": int(getattr(self, "split_seed", 0)),
+            "n_outputs_": None if getattr(self, "n_outputs_", None) is None else int(self.n_outputs_),
+            "Phi_shape": [int(Phi_full.shape[0]), int(Phi_full.shape[1])],
+            "alpha_shape": list(map(int, alpha.shape)),
+            "best_params_": getattr(self, "best_params_", None),
+        }
+
+        # Write
+        np.savez_compressed(path / "arrays.npz", **arrays)
+
+        with (path / "meta.json").open("w", encoding="utf-8") as f:
+            json.dump(meta, f, indent=2, default=_to_builtin)
+
+    @classmethod
+    def load(cls, path: str | Path, *, featurizer=None, **init_kwargs) -> "QRCMaternKRRRegressor":
+        """
+        Load FULL model artifact.
+        - `featurizer` is optional. If provided, you can still call predict(X) (it will re-featurize).
+          If you want to avoid re-featurizing, use predict_from_features with cached Phi_full.
+        - `init_kwargs` lets you pass required constructor args (e.g., tuning config) if your __init__ needs them.
+        """
+        path = Path(path)
+        meta_path = path / "meta.json"
+        arrays_path = path / "arrays.npz"
+
+        if not meta_path.exists() or not arrays_path.exists():
+            raise FileNotFoundError(f"Invalid artifact: expected {meta_path.name} and {arrays_path.name} in {path}")
+
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        data = np.load(arrays_path, allow_pickle=False)
+
+        if meta.get("format_version", None) != _SAVE_FORMAT_VERSION:
+            raise ValueError(
+                f"Unsupported artifact version: {meta.get('format_version')}, expected {_SAVE_FORMAT_VERSION}"
+            )
+
+        # Create instance (inject featurizer if you want)
+        obj = cls(featurizer=featurizer, **init_kwargs)
+
+        # Restore core state
+        obj.standardize = bool(meta["standardize"])
+        obj.test_ratio = float(meta["test_ratio"])
+        obj.split_seed = int(meta["split_seed"])
+        obj.n_outputs_ = meta.get("n_outputs_", None)
+
+        obj.best_params_ = meta.get("best_params_", None)
+
+        obj.Phi_full_ = data["Phi_full"]
+        obj.train_idx_ = data["train_idx"]
+        obj.test_idx_ = data["test_idx"]
+        obj.alpha_ = data["alpha"]
+
+        # Rebuild scaler (store only params, not the full sklearn object)
+        obj.scaler_ = None
+        if obj.standardize:
+            sc = StandardScaler()
+            sc.mean_ = data["scaler_mean"]
+            sc.scale_ = data["scaler_scale"]
+            sc.var_ = sc.scale_ ** 2
+            sc.n_features_in_ = int(sc.mean_.shape[0])
+            obj.scaler_ = sc
+
+        # (Optional but recommended) rebuild kernels from best_params_ so you can
+        # do predict_from_features immediately.
+        # NOTE: replace `_build_kernel(...)` with your actual internal kernel builder.
+        if obj.best_params_ is not None:
+            if isinstance(obj.best_params_, list):
+                obj.kernel_ = [_build_kernel(xi=bp["xi"], nu=bp["nu"]) for bp in obj.best_params_]
+            else:
+                bp = obj.best_params_
+                obj.kernel_ = _build_kernel(xi=bp["xi"], nu=bp["nu"])
+
+        return obj
