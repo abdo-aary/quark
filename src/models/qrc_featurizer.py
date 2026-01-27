@@ -18,7 +18,7 @@ from typing import Any, Dict
 
 import numpy as np
 
-from src.qrc.circuits.configs import BaseQRConfig
+from src.qrc.circuits.qrc_configs import BaseQRConfig
 from src.qrc.circuits.circuit_factory import CircuitFactory
 from src.qrc.circuits.utils import angle_positioning_linear, angle_positioning_tanh
 from src.qrc.run.circuit_run import BaseCircuitsRunner
@@ -37,7 +37,7 @@ class QRCFeaturizer:
 
     Parameters
     ----------
-    cfg : src.qrc.circuits.configs.BaseQRConfig
+    qrc_cfg : src.qrc.circuits.qrc_configs.BaseQRConfig
         Quantum reservoir configuration (number of qubits, input dimension, seed, ...).
     runner : src.qrc.run.circuit_run.BaseCircuitsRunner
         Runner used to execute pubs and return :class:`src.qrc.run.circuit_run.Results`.
@@ -57,7 +57,7 @@ class QRCFeaturizer:
     -----
     This class is conceptually similar to an ``sklearn`` transformer, but kept minimal on purpose.
     """
-    cfg: BaseQRConfig
+    qrc_cfg: BaseQRConfig
     runner: BaseCircuitsRunner
     fmp_retriever: BaseFeatureMapsRetriever
     pubs_family: str
@@ -97,7 +97,7 @@ class QRCFeaturizer:
             raise ValueError(f"Unknown angle_positioning={self.angle_positioning_name!r}")
 
         pubs = CircuitFactory.create_pubs_dataset_reservoirs_IsingRingSWAP(
-            cfg=self.cfg,
+            qrc_cfg=self.qrc_cfg,
             angle_positioning=angle_positioning,
             X=X,
             **self.pubs_kwargs,

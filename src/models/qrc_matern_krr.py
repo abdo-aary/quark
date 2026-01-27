@@ -293,9 +293,9 @@ class QRCMaternKRRRegressor(BaseEstimator, RegressorMixin):
             Expected structure (high level):
 
             - `qrc.cfg`: Hydra instantiable circuit config (e.g., RingQRConfig)
-            - `qrc.runner`: Hydra instantiable runner class (constructed with qr_cfg)
+            - `qrc.runner`: Hydra instantiable runner class (constructed with qrc_cfg)
             - `qrc.runner_kwargs`: dict of kwargs forwarded to runner execution (not ctor)
-            - `qrc.features.retriever`: Hydra instantiable FMP retriever (qr_cfg, observables)
+            - `qrc.features.retriever`: Hydra instantiable FMP retriever (qrc_cfg, observables)
             - `qrc.features.observables`: Hydra instantiable builder returning list[SparsePauliOp]
             - `qrc.features.kwargs`: dict of kwargs forwarded to retriever execution (not ctor)
             - `qrc.pubs`: contains `family`, `angle_positioning`, plus other PUBS kwargs
@@ -315,25 +315,18 @@ class QRCMaternKRRRegressor(BaseEstimator, RegressorMixin):
         """
         # Allow passing either the full cfg or cfg.model
         model_cfg = cfg.model if "model" in cfg else cfg
+        qrc_node = model_cfg.qrc
 
-        qrc_cfg = model_cfg.qrc
+        qrc_cfg = instantiate(qrc_node.cfg)
 
-        # --- instantiate the quantum circuit config
-        qr_cfg = instantiate(qrc_cfg.cfg)
+        observables = instantiate(qrc_node.features.observables)
+        runner = instantiate(qrc_node.runner, qrc_cfg=qrc_cfg)
+        fmp = instantiate(qrc_node.features.retriever, qrc_cfg=qrc_cfg, observables=observables)
 
-        # --- observables: instantiate a builder that returns List[SparsePauliOp]
-        observables = instantiate(qrc_cfg.features.observables)
+        runner_kwargs = _to_plain_dict(qrc_node.get("runner_kwargs"))
+        fmp_kwargs = _to_plain_dict(qrc_node.features.get("kwargs"))
 
-        # --- runner and FMP retriever: instantiate with injected runtime args
-        runner = instantiate(qrc_cfg.runner, qr_cfg)
-        fmp = instantiate(qrc_cfg.features.retriever, qr_cfg, observables)
-
-        # --- kwargs (not ctor args)
-        runner_kwargs = _to_plain_dict(qrc_cfg.get("runner_kwargs"))
-        fmp_kwargs = _to_plain_dict(qrc_cfg.features.get("kwargs"))
-
-        # --- PUBS config (family + angle positioning + remaining kwargs)
-        pubs_container = OmegaConf.to_container(qrc_cfg.pubs, resolve=True)
+        pubs_container = OmegaConf.to_container(qrc_node.pubs, resolve=True)
         pubs_family = pubs_container["family"]
         angle_positioning = pubs_container["angle_positioning"]
         pubs_kwargs = {k: v for k, v in pubs_container.items() if k not in ("family", "angle_positioning")}
@@ -350,7 +343,7 @@ class QRCMaternKRRRegressor(BaseEstimator, RegressorMixin):
         tuning = OmegaConf.to_container(model_cfg.get("tuning", {}), resolve=True) or {}
 
         featurizer = QRCFeaturizer(
-            cfg=qr_cfg,
+            qrc_cfg=qrc_cfg,
             runner=runner,
             fmp_retriever=fmp,
             pubs_family=pubs_family,

@@ -99,7 +99,7 @@ def _cfg_dict(
         "model": {
             "qrc": {
                 "cfg": {
-                    "_target_": "src.qrc.circuits.configs.RingQRConfig",
+                    "_target_": "src.qrc.circuits.qrc_configs.RingQRConfig",
                     "input_dim": int(input_dim),
                     "num_qubits": int(num_qubits),
                     "seed": 0,
@@ -160,7 +160,7 @@ def _patch_runner_to_fake_states(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     Patch ExactAerCircuitsRunner.run_pubs so it:
     - records kwargs
-    - returns valid ExactResults(states=..., cfg=...)
+    - returns valid ExactResults(states=..., qrc_cfg=...)
     - avoids Aer simulation entirely (fast + GPU-agnostic)
 
     Parameters
@@ -176,38 +176,65 @@ def _patch_runner_to_fake_states(monkeypatch: pytest.MonkeyPatch) -> None:
     def fake_run_pubs(self, pubs, **kwargs):
         self._last_run_kwargs = dict(kwargs)
 
-        N = len(pubs)
-        if N == 0:
+        if not pubs:
             raise ValueError("pubs must be non-empty")
-        vals0 = pubs[0][1]
-        R = int(vals0.shape[0])
 
-        n = int(self.cfg.num_qubits)
+        vals0 = np.asarray(pubs[0][1], dtype=float)
+
+        # Support both runner attribute names
+        cfg_obj = getattr(self, "qrc_cfg", getattr(self, "cfg", None))
+        if cfg_obj is None:
+            raise AttributeError("Runner has neither 'qrc_cfg' nor 'cfg' attribute")
+
+        n = int(cfg_obj.num_qubits)
         dim = 1 << n
+
+        # Detect template PUBs: one pub, vals shape (N, R, P)
+        template_mode = (len(pubs) == 1) and (vals0.ndim == 3)
+        if template_mode:
+            N = int(vals0.shape[0])
+            R = int(vals0.shape[1])
+        else:
+            # Legacy PUBs: pubs length N, each vals shape (R, P)
+            N = len(pubs)
+            R = int(vals0.shape[0])
 
         def sigmoid(x: float) -> float:
             x = float(x)
             if x >= 0:
                 z = np.exp(-x)
                 return 1.0 / (1.0 + z)
-            else:
-                z = np.exp(x)
-                return z / (1.0 + z)
+            z = np.exp(x)
+            return z / (1.0 + z)
 
         states = np.zeros((N, R, dim, dim), dtype=complex)
 
-        # Make density matrices vary a bit across examples/reservoirs
-        for i, (_qc, vals) in enumerate(pubs):
-            vals = np.asarray(vals, dtype=float)
-            for r in range(R):
-                s = float(np.mean(vals[r]))
-                p = sigmoid(s)
-                p = float(np.clip(p, 1e-6, 1 - 1e-6))
-                diag = np.full(dim, (1.0 - p) / (dim - 1), dtype=float)
-                diag[0] = p
-                states[i, r] = np.diag(diag).astype(complex)
+        if template_mode:
+            # vals0: (N, R, P_total)
+            for i in range(N):
+                for r in range(R):
+                    s = float(np.mean(vals0[i, r]))
+                    p = sigmoid(s)
+                    p = float(np.clip(p, 1e-6, 1 - 1e-6))
+                    diag = np.full(dim, (1.0 - p) / (dim - 1), dtype=float)
+                    diag[0] = p
+                    states[i, r] = np.diag(diag).astype(complex)
+        else:
+            # legacy: iterate pubs
+            for i, (_qc, vals) in enumerate(pubs):
+                vals = np.asarray(vals, dtype=float)  # (R, P_res)
+                for r in range(R):
+                    s = float(np.mean(vals[r]))
+                    p = sigmoid(s)
+                    p = float(np.clip(p, 1e-6, 1 - 1e-6))
+                    diag = np.full(dim, (1.0 - p) / (dim - 1), dtype=float)
+                    diag[0] = p
+                    states[i, r] = np.diag(diag).astype(complex)
 
-        return ExactResults(states=states, cfg=self.cfg)
+        # Robust constructor for ExactResults: supports field name qrc_cfg or cfg
+        fields = getattr(ExactResults, "__dataclass_fields__", {})
+        cfg_field = "qrc_cfg" if "qrc_cfg" in fields else "cfg"
+        return ExactResults(states=states, **{cfg_field: cfg_obj})
 
     # Patch the *real* class used by Hydra instantiation.
     monkeypatch.setattr(ExactAerCircuitsRunner, "run_pubs", fake_run_pubs, raising=True)

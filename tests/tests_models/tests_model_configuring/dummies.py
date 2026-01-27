@@ -42,11 +42,11 @@ class DummyRunner:
 
     Parameters
     ----------
-    qr_cfg : Any
+    qrc_cfg : Any
         The instantiated QR config (e.g., DummyQRConfig).
     """
-    def __init__(self, qr_cfg: Any):
-        self.qr_cfg = qr_cfg
+    def __init__(self, qrc_cfg: Any):
+        self.qrc_cfg = qrc_cfg
 
 
 class DummyRetriever:
@@ -55,13 +55,13 @@ class DummyRetriever:
 
     Parameters
     ----------
-    qr_cfg : Any
+    qrc_cfg : Any
         The instantiated QR config (e.g., DummyQRConfig).
     observables : list
         Observables passed by `.from_config`.
     """
-    def __init__(self, qr_cfg: Any, observables: List[Any]):
-        self.qr_cfg = qr_cfg
+    def __init__(self, qrc_cfg: Any, observables: List[Any]):
+        self.qrc_cfg = qrc_cfg
         self.observables = list(observables)
 
 
@@ -92,7 +92,7 @@ class DummyFeaturizer:
 
     Parameters
     ----------
-    cfg : Any
+    qrc_cfg : Any
         QR config.
     runner : Any
         Runner.
@@ -112,7 +112,7 @@ class DummyFeaturizer:
     def __init__(
         self,
         *,
-        cfg: Any,
+        qrc_cfg: Any,
         runner: Any,
         fmp_retriever: Any,
         pubs_family: str,
@@ -121,7 +121,7 @@ class DummyFeaturizer:
         runner_kwargs: dict,
         fmp_kwargs: dict,
     ):
-        self.cfg = cfg
+        self.qrc_cfg = qrc_cfg
         self.runner = runner
         self.fmp_retriever = fmp_retriever
         self.pubs_family = pubs_family

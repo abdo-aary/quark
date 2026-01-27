@@ -48,8 +48,8 @@ def test_featurizer_transform_happy_path(monkeypatch):
     retriever = DummyRetriever(D=11)
 
     # Patch CircuitFactory call so we don't touch Qiskit/circuits here
-    def fake_create_pubs(*, cfg, angle_positioning, X, **kwargs):
-        assert cfg is cfg_obj
+    def fake_create_pubs(*, qrc_cfg, angle_positioning, X, **kwargs):
+        assert qrc_cfg is cfg_obj
         assert callable(angle_positioning)
         assert X.shape == (N, w, d)
         assert kwargs == {"a": 1}
@@ -63,7 +63,7 @@ def test_featurizer_transform_happy_path(monkeypatch):
     )
 
     featurizer = qf.QRCFeaturizer(
-        cfg=cfg_obj,
+        qrc_cfg=cfg_obj,
         runner=runner,
         fmp_retriever=retriever,
         pubs_family="ising_ring_swap",
@@ -92,7 +92,7 @@ def test_featurizer_rejects_bad_X_shape():
     retriever = DummyRetriever()
 
     featurizer = qf.QRCFeaturizer(
-        cfg=DummyCfg(),
+        qrc_cfg=DummyCfg(),
         runner=runner,
         fmp_retriever=retriever,
         pubs_family="ising_ring_swap",
@@ -110,7 +110,7 @@ def test_featurizer_rejects_unknown_pubs_family():
     runner = DummyRunner()
     retriever = DummyRetriever()
     featurizer = qf.QRCFeaturizer(
-        cfg=DummyCfg(),
+        qrc_cfg=DummyCfg(),
         runner=runner,
         fmp_retriever=retriever,
         pubs_family="unknown",
@@ -127,7 +127,7 @@ def test_featurizer_rejects_unknown_angle_positioning():
     runner = DummyRunner()
     retriever = DummyRetriever()
     featurizer = qf.QRCFeaturizer(
-        cfg=DummyCfg(),
+        qrc_cfg=DummyCfg(),
         runner=runner,
         fmp_retriever=retriever,
         pubs_family="ising_ring_swap",
@@ -160,7 +160,7 @@ def test_featurizer_rejects_wrong_feature_shape(monkeypatch):
     )
 
     featurizer = qf.QRCFeaturizer(
-        cfg=DummyCfg(),
+        qrc_cfg=DummyCfg(),
         runner=runner,
         fmp_retriever=retriever,
         pubs_family="ising_ring_swap",

@@ -34,7 +34,7 @@ class BaseFeatureMapsRetriever(ABC):
 
     Attributes
     ----------
-    cfg : BaseQRConfig
+    qrc_cfg : BaseQRConfig
         Circuit configuration (num qubits, projection, topology).
     observables : Sequence[Operator]
         Observables used to compute features. Each feature is an expectation value
@@ -43,7 +43,7 @@ class BaseFeatureMapsRetriever(ABC):
         Cached feature matrix produced by the last call to :meth:`get_feature_maps`.
     """
 
-    cfg: BaseQRConfig
+    qrc_cfg: BaseQRConfig
     fmps: np.ndarray = None
     observables: Sequence[Operator]
 
@@ -129,8 +129,8 @@ class ExactFeatureMapsRetriever(BaseFeatureMapsRetriever):
 
     Parameters
     ----------
-    cfg : BaseQRConfig
-        Circuit configuration. Only ``cfg.num_qubits`` is required for shape validation.
+    qrc_cfg : BaseQRConfig
+        Circuit configuration. Only ``qrc_cfg.num_qubits`` is required for shape validation.
     observables : Sequence[Operator | SparsePauliOp]
         Observables to measure.
 
@@ -140,8 +140,8 @@ class ExactFeatureMapsRetriever(BaseFeatureMapsRetriever):
         If the observable labels do not match ``num_qubits`` (Pauli fast path).
     """
 
-    def __init__(self, cfg: BaseQRConfig, observables: Sequence[Operator | SparsePauliOp]):
-        self.cfg = cfg
+    def __init__(self, qrc_cfg: BaseQRConfig, observables: Sequence[Operator | SparsePauliOp]):
+        self.qrc_cfg = qrc_cfg
         self.observables = observables
         self._pauli_cache = None  # list[(xmask:int, zmask:int, ny:int)] or None
         self._dense_cache = None  # obs_mat (K,dim,dim) if needed
@@ -271,7 +271,7 @@ class ExactFeatureMapsRetriever(BaseFeatureMapsRetriever):
         Raises
         ------
         ValueError
-            If ``results.states`` has an unexpected shape or does not match ``cfg.num_qubits``.
+            If ``results.states`` has an unexpected shape or does not match ``qrc_cfg.num_qubits``.
         """
         states = np.asarray(results.states)
         if states.ndim != 4:
@@ -280,10 +280,10 @@ class ExactFeatureMapsRetriever(BaseFeatureMapsRetriever):
         N, R, dim1, dim2 = states.shape
         if dim1 != dim2:
             raise ValueError(f"Density matrices must be square; got {dim1}x{dim2}")
-        n = int(self.cfg.num_qubits)
+        n = int(self.qrc_cfg.num_qubits)
         dim = 1 << n
         if dim1 != dim:
-            raise ValueError(f"Expected dim=2**n={dim}, got {dim1}. Check cfg.num_qubits vs results.states.")
+            raise ValueError(f"Expected dim=2**n={dim}, got {dim1}. Check qrc_cfg.num_qubits vs results.states.")
 
         K = len(self.observables)
         if K == 0:

@@ -31,7 +31,7 @@ class CSFeatureMapsRetriever(BaseFeatureMapsRetriever):
 
     Parameters
     ----------
-    cfg : BaseQRConfig
+    qrc_cfg : BaseQRConfig
         Circuit configuration; used to validate state dimension.
     observables : Sequence[Operator | SparsePauliOp]
         Observables defining features.
@@ -59,13 +59,13 @@ class CSFeatureMapsRetriever(BaseFeatureMapsRetriever):
 
     def __init__(
         self,
-        cfg,
+        qrc_cfg,
         observables: Sequence[Operator | SparsePauliOp],
         *,
         default_shots: Optional[int] = None,
         default_n_groups: Optional[int] = None,
     ):
-        self.cfg = cfg
+        self.qrc_cfg = qrc_cfg
         self.observables = list(observables)
         if len(self.observables) == 0:
             raise ValueError("observables must be non-empty.")
@@ -74,7 +74,7 @@ class CSFeatureMapsRetriever(BaseFeatureMapsRetriever):
         self.default_n_groups = default_n_groups
 
         # Reuse the exact retriever to compute μ = Tr(ρ O) with the same ordering/cache.
-        self._exact = ExactFeatureMapsRetriever(cfg, self.observables)
+        self._exact = ExactFeatureMapsRetriever(qrc_cfg, self.observables)
 
     @staticmethod
     def _pick_n_groups(shots: int) -> int:
@@ -134,8 +134,8 @@ class CSFeatureMapsRetriever(BaseFeatureMapsRetriever):
         if shots <= 0:
             raise ValueError(f"shots must be positive, got {shots}.")
 
-        # Basic cfg compatibility check
-        n = int(self.cfg.num_qubits)
+        # Basic qrc_cfg compatibility check
+        n = int(self.qrc_cfg.num_qubits)
         dim = 1 << n
         states = np.asarray(results.states)
         if states.ndim != 4:
