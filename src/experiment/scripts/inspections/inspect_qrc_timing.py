@@ -30,8 +30,6 @@ from qiskit import QuantumCircuit, transpile
 from qiskit.circuit import Parameter, ParameterVector
 from qiskit_aer import AerSimulator  # will raise if not installed
 
-from src.qrc.circuits.configs import RingQRConfig
-
 
 def _make_parametric_qc(num_qubits: int) -> QuantumCircuit:
     """
