@@ -1,5 +1,6 @@
 """
 src.qrc.run.circuit_run
+======================
 
 Runners and result containers for executing QRC circuits.
 
@@ -7,37 +8,56 @@ This module defines:
 
 - :class:`Results` and concrete subclasses such as :class:`ExactResults` that store
   simulator outputs in a consistent shape.
-- :class:`BaseCircuitsRunner`, an interface for executing a list of PUBs
-  (parameterized circuit + parameter value matrix).
+- :class:`BaseCircuitsRunner`, an interface for executing a list of PUBs.
 - :class:`ExactAerCircuitsRunner`, an Aer-based runner that executes PUBs using
   ``AerSimulator(method="density_matrix")`` and returns reduced density matrices
   on the reservoir subsystem.
 
+PUB format
+----------
 A **PUB** is represented as a ``(qc, param_values)`` tuple where:
 
-- ``qc`` is a Qiskit :class:`~qiskit.QuantumCircuit` that is parameterized by the
-  reservoir parameters (and may already include input injection angles as numeric values).
-- ``param_values`` is a NumPy array of shape ``(R, P)`` that provides *R* distinct
-  reservoir parameterizations for the same circuit (spatial multiplexing). The
-  column order is **not** ``qc.parameters`` order: it is rebuilt from circuit
-  metadata to ensure stable alignment after transpilation.
+- ``qc`` is a Qiskit :class:`~qiskit.QuantumCircuit`.
+- ``param_values`` is a NumPy array of numeric parameter bindings.
 
-The runner expects the circuit metadata keys:
+Two PUB layouts are supported:
 
-- ``qc.metadata["J"]``: iterable of coupling parameters (two-qubit ZZ weights)
-- ``qc.metadata["h_x"]``: iterable of local X-field parameters
-- ``qc.metadata["h_z"]``: iterable of local Z-field parameters
-- ``qc.metadata["lam"]``: contraction parameter
+1) **Legacy PUBs** (one circuit per window)
+   ``pubs`` has length ``N`` and each PUB is ``(qc_i, vals_i)`` with:
 
-These keys are produced by the circuit factory in :mod:`src.qrc.circuits`.
+   - ``vals_i.shape == (R, P_res)``
+   - ``P_res = |J| + |h_x| + |h_z| + 1``
 
-Performance note (Patch B)
---------------------------
-Transpiling inside a Python loop can dominate runtime long before GPU work starts.
-To reduce overhead while preserving correctness for circuits that differ by *numeric*
-injection angles, :meth:`ExactAerCircuitsRunner.run_pubs` uses **batched transpilation**
-(`transpile(list_of_circuits, ...)`) rather than caching/reusing a transpiled circuit.
+   Here, the injected inputs are already numeric in ``qc_i`` (only reservoir
+   parameters are bound).
+
+2) **Template PUB** (recommended; one circuit for all windows)
+   ``pubs`` has length ``1`` and the single PUB is ``(qc_template, vals)`` with:
+
+   - ``vals.shape == (N, R, P_total)``
+   - ``P_total = (w·n) + (|J| + |h_x| + |h_z| + 1)``
+
+   Here, *both* injected inputs (per time-step vectors ``z_0, …, z_{w-1}``) and
+   reservoir parameters are bound numerically from ``vals``.
+
+Parameter alignment contract
+----------------------------
+To avoid relying on ``qc.parameters`` (which can change after transpilation),
+bindings must follow a deterministic parameter order:
+
+- If available, use ``qc.metadata["param_order"]`` (flat list of Parameters).
+- Otherwise, runners fall back to rebuilding the order from metadata:
+  ``list(J) + list(h_x) + list(h_z) + [lam]`` (legacy circuits).
+
+These metadata keys are produced by the circuit factory in :mod:`src.qrc.circuits`.
+
+Performance note
+----------------
+In template-PUB mode, the same parameterized circuit can be transpiled once and
+executed over many parameter bindings (``N·R`` experiments). The runner supports
+optional chunking to reduce peak memory.
 """
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
@@ -237,14 +257,18 @@ class ExactAerCircuitsRunner(BaseCircuitsRunner):
     -----
     **Parameter alignment**:
 
-    The expected column order of each ``vals`` matrix is:
+- Preferred: bind using the explicit column order in ``qc.metadata["param_order"]``.
+  This is required for the template-PUB workflow, where injected inputs and reservoir
+  parameters are concatenated into one vector.
+- Fallback (legacy circuits): if ``param_order`` is absent, the runner assumes the
+  reservoir-parameter column order:
 
-    ``list(J) + list(h_x) + list(h_z) + [lam]``
+  ``list(J) + list(h_x) + list(h_z) + [lam]``
 
-    where these parameter vectors/objects are retrieved from ``qc.metadata``.
-    This is intentionally *not* ``qc.parameters`` order (which can change under transpilation).
+  where these parameters are retrieved from ``qc.metadata``.
 
-    **GPU execution**:
+**GPU execution**:
+
 
     If Aer is built with GPU support and exposes ``available_devices()``,
     passing ``device="GPU"`` to :meth:`run_pubs` will request GPU execution.
@@ -284,7 +308,7 @@ class ExactAerCircuitsRunner(BaseCircuitsRunner):
                 ``pubs`` has length ``N`` and each ``vals`` is shape ``(R, P)``.
 
             **Batched-template mode** (the “big fix”):
-                ``pubs`` has length ``1`` and the single ``vals`` is shape ``(N, R, P)``.
+                ``pubs`` has length ``1`` and the single ``vals`` is shape ``(N, R, P_total)``.
                 The same parameterized circuit template is transpiled once and executed with
                 vectorized parameter binds.
 
@@ -312,6 +336,10 @@ class ExactAerCircuitsRunner(BaseCircuitsRunner):
         -------
         ExactResults
             Reduced reservoir density matrices, shape ``(N, R, 2**n, 2**n)``.
+
+        Notes
+        -----
+        Parameter binds follow ``qc.metadata["param_order"]`` when present.
 
         Raises
         ------
