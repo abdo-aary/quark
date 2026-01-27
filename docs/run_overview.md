@@ -16,9 +16,20 @@ Concretely, the package provides:
 
 ## Big picture: data flow
 
-1. `CircuitFactory` (from `src.qrc.circuits`) builds a PUBS dataset from windows `X ∈ R^{N×w×d}`:
-   - `pubs = [(qc_i, vals_i)]_{i=1..N}`, where `vals_i ∈ R^{R×P}` contains **R** reservoir parameterizations.
-2. A `BaseCircuitsRunner` executes `pubs` and returns a `Results` object (typically `ExactResults`).
+1. `CircuitFactory` (from `src.qrc.circuits`) builds PUBs from windows `X ∈ R^{N×w×d}`.
+
+   **Template PUB mode (recommended; current default):**
+   - `pubs = [(qc_template, vals)]` is a **length-1** list.
+   - `vals.shape == (N, R, P_total)` where
+     `P_total = (w·n) + (|J| + |h_x| + |h_z| + 1)`.
+   - The numeric column order is stored in `qc_template.metadata["param_order"]`.
+
+   **Legacy mode (still supported by the runner):**
+   - `pubs = [(qc_i, vals_i)]_{i=1..N}` and `vals_i.shape == (R, P_res)`
+     with `P_res = |J| + |h_x| + |h_z| + 1`.
+   - Injected inputs are already numeric in `qc_i`; only reservoir params are bound.
+
+2. A `BaseCircuitsRunner` executes `pubs` and returns a `Results` object (typically `ExactResults`). executes `pubs` and returns a `Results` object (typically `ExactResults`).
 3. A `BaseFeatureMapsRetriever` converts `Results` into classical features:
    - `Φ ∈ R^{N×(R·K)}` where `K = len(observables)`.
 4. Downstream models (KRR / GP / etc.) train on `Φ` and labels `y`.
@@ -43,13 +54,13 @@ class BaseQRConfig {
 
 class CircuitFactory {
   <<static>>
-  +create_pubs_dataset_reservoirs_IsingRingSWAP(qrc_cfg, angle_positioning, X, lam_0, num_reservoirs, seed, eps) List~Pub~
+  +create_pubs_dataset_reservoirs_IsingRingSWAP(qrc_cfg, angle_positioning, X, num_reservoirs, lam_0, seed, eps) List~Pub~
 }
 
 class Pub {
   <<tuple>>
   +QuantumCircuit qc
-  +ndarray param_values  # (R,P)
+  +ndarray param_values  # template: (N,R,P_total) | legacy: (R,P_res)
 }
 
 class QuantumCircuit {
@@ -170,13 +181,14 @@ Abstract interface: `run_pubs(...) -> Results`.
 ### `ExactAerCircuitsRunner`
 Executes PUBs on Qiskit Aer (`AerSimulator(method="density_matrix")`).
 
-**Key convention (parameter order):**
-The runner binds parameters in the order:
+**Key convention (parameter binding order):**
+The runner binds parameters using:
 
-`list(J) + list(h_x) + list(h_z) + [lam]`
+- Preferred (template mode): `qc.metadata["param_order"]`
+- Fallback (legacy circuits): `list(J) + list(h_x) + list(h_z) + [lam]`
+  reconstructed from `qc.metadata`.
 
-and reconstructs this list from `qc.metadata`. That makes binding robust to transpilation
-re-ordering of `qc.parameters`.
+This avoids relying on `qc.parameters`, whose order may change after transpilation.
 
 **GPU support:**
 If Aer exposes `available_devices()` and reports `"GPU"`, you can pass `device="GPU"` to
@@ -221,13 +233,15 @@ This yields a feature matrix with the same shape/order as the exact retriever.
 
 ## Shapes & conventions (quick reference)
 
-- `pubs`: list of length `N`
-  - `pub = (qc, vals)`
-  - `vals`: `(R, P)`
+- `pubs` (template mode): list of length **1**
+  - `pub = (qc_template, vals)`
+  - `vals`: `(N, R, P_total)` with `P_total = (w·n) + (|J| + |h_x| + |h_z| + 1)`
+  - binding order: `qc_template.metadata["param_order"]`
+- `pubs` (legacy mode): list of length `N`
+  - `pub_i = (qc_i, vals_i)`
+  - `vals_i`: `(R, P_res)` with `P_res = |J| + |h_x| + |h_z| + 1`
 - `ExactResults.states`: `(N, R, 2**n, 2**n)`
 - `Φ` (features): `(N, R*K)` with `K = len(observables)`
-
----
 
 ## Minimal usage example
 
@@ -235,25 +249,27 @@ This yields a feature matrix with the same shape/order as the exact retriever.
 import numpy as np
 from src.qrc.circuits.qrc_configs import RingQRConfig
 from src.qrc.circuits.circuit_factory import CircuitFactory
-from src.qrc.circuits.utils import angle_positioning_tanh
+from src.qrc.circuits.utils import angle_positioning_tanh, generate_k_local_paulis
 from src.qrc.run.circuit_run import ExactAerCircuitsRunner
 from src.qrc.run.fmp_retriever import ExactFeatureMapsRetriever
-from src.qrc.circuits.utils import generate_k_local_paulis
 
 qrc_cfg = RingQRConfig(input_dim=3, num_qubits=3, seed=0)
 
+# windows: (N, w, d)
 X = np.random.default_rng(0).normal(size=(10, 20, 3))
+
+# Template PUB: pubs is length 1; vals is (N, R, P_total)
 pubs = CircuitFactory.create_pubs_dataset_reservoirs_IsingRingSWAP(
     qrc_cfg=qrc_cfg,
     angle_positioning=angle_positioning_tanh,
     X=X,
-    lam_0=0.2,
     num_reservoirs=4,
+    lam_0=0.2,
     seed=0,
 )
 
 runner = ExactAerCircuitsRunner(qrc_cfg)
-results = runner.run_pubs(pubs, device="CPU", optimization_level=1)
+results = runner.run_pubs(pubs, device="CPU", optimization_level=1)  # states: (N, R, 2^n, 2^n)
 
 observables = generate_k_local_paulis(locality=1, num_qubits=qrc_cfg.num_qubits)
 retriever = ExactFeatureMapsRetriever(qrc_cfg, observables)
@@ -264,7 +280,7 @@ Phi = retriever.get_feature_maps(results)  # (N, R*K)
 
 ## Common pitfalls
 
-- **Metadata contract**: `ExactAerCircuitsRunner` requires `qc.metadata["J","h_x","h_z","lam"]`.
+- **Metadata contract**: `ExactAerCircuitsRunner` requires `qc.metadata["J","h_x","h_z","lam"]` and, in template mode, `qc.metadata["param_order"]`.
   Circuits not built by your `CircuitFactory` usually won’t satisfy this.
 - **Observable label length** (exact Pauli path): each Pauli string must have length `num_qubits`,
   e.g. `"ZII"` for `n=3`.

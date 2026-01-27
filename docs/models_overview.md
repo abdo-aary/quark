@@ -16,13 +16,15 @@ At a high level:
 A lightweight, **stateless** transformer:
 
 - **Input:** windows `X` with shape `(N, w, d)`
-- Builds a pubs dataset (circuits + parameter binds) using `CircuitFactory`
-- Executes pubs with a `BaseCircuitsRunner`
+- Builds PUBs using `CircuitFactory`
+  - current default is a **single template PUB**: `pubs = [(qc_template, vals)]`
+  - `vals.shape == (N, R, P_total)` and binds follow `qc_template.metadata["param_order"]`
+- Executes PUBs with a `BaseCircuitsRunner` (e.g., `ExactAerCircuitsRunner`)
 - Converts results into a feature matrix `Φ` with a `BaseFeatureMapsRetriever`
 
 Because it is stateless, the same `Φ` can be reused for many supervised tasks without re-running circuits.
 
-### `QRCMaternKRRRegressor` (`src.models.qrc_matern_krr`)
+### `QRCMaternKRRRegressor` (`src.models.qrc_matern_krr`) (`src.models.qrc_matern_krr`)
 An end-to-end regressor that combines:
 
 - `QRCFeaturizer` to compute `Φ`
@@ -84,7 +86,7 @@ class CircuitFactory {
 }
 class Pub {
   +QuantumCircuit qc
-  +ndarray param_values
+  +ndarray param_values  # template: (N,R,P_total) | legacy: (R,P_res)
 }
 class BaseCircuitsRunner {
   <<abstract>>
@@ -150,7 +152,7 @@ import numpy as np
 from src.models.qrc_matern_krr import QRCMaternKRRRegressor
 
 # 1) Build from YAML (wires CircuitFactory + Runner + Retriever + tuning config)
-mdl = QRCMaternKRRRegressor.from_yaml("configs/qrc_matern_krr.yaml")
+mdl = QRCMaternKRRRegressor.from_yaml("conf/model/qrc_matern_krr.yaml")
 
 # 2) Data: windows X and multiple labels Y
 rng = np.random.default_rng(0)
@@ -164,7 +166,7 @@ L = 3
 Y = rng.normal(size=(L, N)).astype(float)
 
 # 3) Fit (features Φ computed ONCE; tuning+KRR done once per output)
-mdl.fit(X, Y, num_workers=3)
+mdl.fit(X, Y, num_workers=3)  # runner_kwargs forwarded via the featurizer
 
 # 4) Predict on the held-out test split (cached during fit)
 Yhat = mdl.predict()          # shape: (L, N_test) if L>1
