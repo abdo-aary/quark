@@ -56,17 +56,17 @@ def pubs_get_qc_row(pubs, i: int, r: int):
     raise ValueError(f"Unexpected vals.ndim={vals.ndim} for pubs_get_qc_row")
 
 
-def call_create_pubs_dataset(*, cfg, angle_positioning, X, lam_0, num_reservoirs, seed=0, eps=1e-8, template_pub=True):
+def call_create_pubs_dataset(*, qrc_cfg, angle_positioning, X, lam_0, num_reservoirs, seed=0, eps=1e-8, template_pub=True):
     """Dispatcher across legacy vs optimized CircuitFactory signatures."""
     fn = _get_pub_dataset_fn()
     sig = inspect.signature(fn)
     params = sig.parameters
 
-    kwargs = dict(cfg=cfg, angle_positioning=angle_positioning, X=X)
+    kwargs = dict(qrc_cfg=qrc_cfg, angle_positioning=angle_positioning, X=X)
 
     if "parameters_reservoirs" in params:
         parameters_reservoirs = CircuitFactory.set_reservoirs_parameterizationSWAP(
-            cfg=cfg,
+            qrc_cfg=qrc_cfg,
             angle_positioning=angle_positioning,
             num_reservoirs=num_reservoirs,
             lam_0=lam_0,
@@ -156,14 +156,14 @@ def trace_expectations(rho: np.ndarray, observables) -> np.ndarray:
     return np.asarray(exps, dtype=float)
 
 
-def make_pub_all_lam_zero(cfg, x_window: np.ndarray, R: int, seed: int = 0):
+def make_pub_all_lam_zero(qrc_cfg, x_window: np.ndarray, R: int, seed: int = 0):
     """
     Create a single pub (qc, param_values) where lam=0 for all reservoirs.
     This bypasses any eps constraints in higher-level builders and is ideal for a spec test:
         E_{lam=0} forces the final reservoir state to |+><+|^{⊗n}.
     """
     qc = CircuitFactory.instantiateFullIsingRingEvolution(
-        cfg=cfg, angle_positioning=angle_positioning_linear, x_window=x_window
+        qrc_cfg=qrc_cfg, angle_positioning=angle_positioning_linear, x_window=x_window
     )
 
     J = list(qc.metadata["J"])
@@ -210,7 +210,7 @@ def pubs_small(cfg_small, X_small):
     R = 3
 
     pubs = call_create_pubs_dataset(
-        cfg=cfg_small,
+        qrc_cfg=cfg_small,
         angle_positioning=angle_positioning_linear,
         X=X_small,
         lam_0=lam_0,
@@ -237,7 +237,7 @@ def test_fmps_shape_and_order_unit(cfg_small):
     dim = 1 << n
     N, R = 4, 3
     states = random_density_matrices(N, R, dim, seed=7)
-    results = ExactResults(states=states, cfg=cfg_small)
+    results = ExactResults(states=states, qrc_cfg=cfg_small)
 
     obs = pauli_observables_1local(n)  # K=2n
     K = len(obs)
@@ -259,7 +259,7 @@ def test_fast_pauli_path_matches_dense_trace_unit(cfg_small):
     dim = 1 << n
     N, R = 2, 2
     states = random_density_matrices(N, R, dim, seed=9)
-    results = ExactResults(states=states, cfg=cfg_small)
+    results = ExactResults(states=states, qrc_cfg=cfg_small)
 
     obs_sparse = pauli_observables_1local(n)
     # Force dense path by converting to Operator

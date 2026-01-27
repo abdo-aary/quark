@@ -53,17 +53,17 @@ def pubs_get_qc_row(pubs, i: int, r: int):
     raise ValueError(f"Unexpected vals.ndim={vals.ndim} for pubs_get_qc_row")
 
 
-def call_create_pubs_dataset(*, cfg, angle_positioning, X, lam_0, num_reservoirs, seed=0, eps=1e-8, template_pub=True):
+def call_create_pubs_dataset(*, qrc_cfg, angle_positioning, X, lam_0, num_reservoirs, seed=0, eps=1e-8, template_pub=True):
     """Dispatcher across legacy vs optimized CircuitFactory signatures."""
     fn = _get_pub_dataset_fn()
     sig = inspect.signature(fn)
     params = sig.parameters
 
-    kwargs = dict(cfg=cfg, angle_positioning=angle_positioning, X=X)
+    kwargs = dict(qrc_cfg=qrc_cfg, angle_positioning=angle_positioning, X=X)
 
     if "parameters_reservoirs" in params:
         parameters_reservoirs = CircuitFactory.set_reservoirs_parameterizationSWAP(
-            cfg=cfg,
+            qrc_cfg=qrc_cfg,
             angle_positioning=angle_positioning,
             num_reservoirs=num_reservoirs,
             lam_0=lam_0,
@@ -145,7 +145,7 @@ def pubs_small(cfg_small, X_small):
         pytest.skip("CircuitFactory.create_pubs_dataset_reservoirs_IsingRingSWAP not found.")
 
     pubs = call_create_pubs_dataset(
-        cfg=cfg_small,
+        qrc_cfg=cfg_small,
         angle_positioning=angle_positioning_linear,
         X=X_small,
         lam_0=lam_0,
@@ -181,7 +181,7 @@ def obs_k1(cfg_small):
 def test_cs_requires_shots_if_no_default(cfg_small, obs_k1):
     dim = 1 << cfg_small.num_qubits
     states = random_density_matrices(N=2, R=2, dim=dim, seed=0)
-    results = ExactResults(states=states, cfg=cfg_small)
+    results = ExactResults(states=states, qrc_cfg=cfg_small)
 
     cs = CSFeatureMapsRetriever(cfg_small, obs_k1, default_shots=None)
     with pytest.raises(ValueError):
@@ -191,7 +191,7 @@ def test_cs_requires_shots_if_no_default(cfg_small, obs_k1):
 def test_cs_validates_states_shape(cfg_small, obs_k1):
     # wrong shape -> should raise
     bad_states = np.zeros((2, 2, 4), dtype=complex)
-    results = ExactResults(states=bad_states, cfg=cfg_small)
+    results = ExactResults(states=bad_states, qrc_cfg=cfg_small)
 
     cs = CSFeatureMapsRetriever(cfg_small, obs_k1, default_shots=100)
     with pytest.raises(ValueError):
@@ -203,7 +203,7 @@ def test_cs_output_shape_and_range_unit(cfg_small, obs_k1):
     dim = 1 << n
     N, R = 4, 3
     states = random_density_matrices(N=N, R=R, dim=dim, seed=7)
-    results = ExactResults(states=states, cfg=cfg_small)
+    results = ExactResults(states=states, qrc_cfg=cfg_small)
 
     shots = 200
     cs = CSFeatureMapsRetriever(cfg_small, obs_k1, default_shots=shots)
@@ -221,7 +221,7 @@ def test_cs_deterministic_given_seed_unit(cfg_small, obs_k1):
     n = cfg_small.num_qubits
     dim = 1 << n
     states = random_density_matrices(N=2, R=2, dim=dim, seed=9)
-    results = ExactResults(states=states, cfg=cfg_small)
+    results = ExactResults(states=states, qrc_cfg=cfg_small)
 
     cs = CSFeatureMapsRetriever(cfg_small, obs_k1, default_shots=500)
 

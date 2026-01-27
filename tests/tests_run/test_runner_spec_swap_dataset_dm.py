@@ -67,7 +67,7 @@ def pubs_get_qc_vals_for_window(pubs, i: int):
 
 def call_create_pubs_dataset(
     *,
-    cfg,
+    qrc_cfg,
     angle_positioning,
     X,
     lam_0: float,
@@ -79,18 +79,18 @@ def call_create_pubs_dataset(
     """
     Dispatch across legacy vs optimized CircuitFactory signatures.
 
-    - Optimized signature: (cfg, angle_positioning, X, parameters_reservoirs, template_pub=...)
-    - Legacy signature: (cfg, angle_positioning, X, lam_0, num_reservoirs, seed, eps, ...)
+    - Optimized signature: (qrc_cfg, angle_positioning, X, parameters_reservoirs, template_pub=...)
+    - Legacy signature: (qrc_cfg, angle_positioning, X, lam_0, num_reservoirs, seed, eps, ...)
     """
     fn = get_pub_dataset_fn()
     sig = inspect.signature(fn)
     params = sig.parameters
 
-    kwargs = dict(cfg=cfg, angle_positioning=angle_positioning, X=X)
+    kwargs = dict(qrc_cfg=qrc_cfg, angle_positioning=angle_positioning, X=X)
 
     if "parameters_reservoirs" in params:
         parameters_reservoirs = CircuitFactory.set_reservoirs_parameterizationSWAP(
-            cfg=cfg,
+            qrc_cfg=qrc_cfg,
             angle_positioning=angle_positioning,
             num_reservoirs=num_reservoirs,
             lam_0=lam_0,
@@ -148,12 +148,12 @@ def plus_density(n):
     return DensityMatrix(sv)
 
 
-def run_reservoir_dm_direct(qc, cfg, row, seed=0, label="dm_res"):
+def run_reservoir_dm_direct(qc, qrc_cfg, row, seed=0, label="dm_res"):
     """
     Direct Aer run for a single bound parameter row.
     Saves ONLY the reservoir DM (qubits 0..n-1), returns DensityMatrix.
     """
-    n = int(cfg.num_qubits)
+    n = int(qrc_cfg.num_qubits)
     backend = AerSimulator(method="density_matrix")
 
     qc2 = qc.copy()
@@ -175,14 +175,14 @@ def run_reservoir_dm_direct(qc, cfg, row, seed=0, label="dm_res"):
     return dm if isinstance(dm, DensityMatrix) else DensityMatrix(dm)
 
 
-def run_full_and_reduced_dm_direct(qc, cfg, row, seed=0):
+def run_full_and_reduced_dm_direct(qc, qrc_cfg, row, seed=0):
     """
     Direct Aer run saving:
       - full density matrix
       - reduced reservoir density matrix
     and returning both DensityMatrix objects.
     """
-    n = int(cfg.num_qubits)
+    n = int(qrc_cfg.num_qubits)
     backend = AerSimulator(method="density_matrix")
 
     qc2 = qc.copy()
@@ -250,7 +250,7 @@ def random_X(cfg_small):
 @pytest.fixture
 def pubs(cfg_small, random_X):
     return call_create_pubs_dataset(
-        cfg=cfg_small,
+        qrc_cfg=cfg_small,
         angle_positioning=angle_positioning_linear,
         X=random_X,
         lam_0=0.05,

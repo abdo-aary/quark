@@ -142,22 +142,22 @@ def assert_is_valid_density_matrix(dm: np.ndarray, atol: float = 1e-10):
     assert np.min(evals) >= -5e-9
 
 
-def call_create_pubs(*, cfg, angle_positioning, X, lam_0, num_reservoirs, seed, eps, template_pub=True):
+def call_create_pubs(*, qrc_cfg, angle_positioning, X, lam_0, num_reservoirs, seed, eps, template_pub=True):
     """
     Dispatch across legacy/optimized signatures.
 
-    - Legacy signature (common): (cfg, angle_positioning, X, lam_0, num_reservoirs, seed, eps)
-    - Optimized signature (common): (cfg, angle_positioning, X, parameters_reservoirs, template_pub=...)
+    - Legacy signature (common): (qrc_cfg, angle_positioning, X, lam_0, num_reservoirs, seed, eps)
+    - Optimized signature (common): (qrc_cfg, angle_positioning, X, parameters_reservoirs, template_pub=...)
     """
     create_pubs = get_create_pubs_fn()
     sig = inspect.signature(create_pubs)
     params = sig.parameters
 
-    kwargs = dict(cfg=cfg, angle_positioning=angle_positioning, X=X)
+    kwargs = dict(qrc_cfg=qrc_cfg, angle_positioning=angle_positioning, X=X)
 
     if "parameters_reservoirs" in params:
         parameters_reservoirs = CircuitFactory.set_reservoirs_parameterizationSWAP(
-            cfg=cfg,
+            qrc_cfg=qrc_cfg,
             angle_positioning=angle_positioning,
             num_reservoirs=num_reservoirs,
             lam_0=lam_0,
@@ -180,22 +180,22 @@ def call_create_pubs(*, cfg, angle_positioning, X, lam_0, num_reservoirs, seed, 
 # fixtures
 # ----------------------------
 @pytest.fixture
-def cfg():
+def qrc_cfg():
     # keep this small-ish for CI speed
     return RingQRConfig(input_dim=10, num_qubits=3, seed=12345)
 
 
 @pytest.fixture
-def X(cfg):
-    N, w, d = 3, 2, cfg.input_dim
+def X(qrc_cfg):
+    N, w, d = 3, 2, qrc_cfg.input_dim
     return make_random_X(N=N, w=w, d=d, seed=777, eps=1e-8)
 
 
 @pytest.fixture
-def pubs(cfg, X):
+def pubs(qrc_cfg, X):
     # Prefer template PUB mode when supported by the factory
     return call_create_pubs(
-        cfg=cfg,
+        qrc_cfg=qrc_cfg,
         angle_positioning=angle_positioning_linear,
         X=X,
         lam_0=0.05,
@@ -209,8 +209,8 @@ def pubs(cfg, X):
 # ----------------------------
 # tests: qualitative
 # ----------------------------
-def test_run_pubs_returns_exactresults_and_shapes(cfg, pubs):
-    runner = ExactAerCircuitsRunner(cfg)
+def test_run_pubs_returns_exactresults_and_shapes(qrc_cfg, pubs):
+    runner = ExactAerCircuitsRunner(qrc_cfg)
 
     res = runner.run_pubs(pubs=pubs, seed_simulator=0, optimization_level=1)
 
@@ -218,7 +218,7 @@ def test_run_pubs_returns_exactresults_and_shapes(cfg, pubs):
     assert isinstance(res.states, np.ndarray)
 
     N, R = pubs_N_R(pubs)
-    n = cfg.num_qubits
+    n = qrc_cfg.num_qubits
     dim = 2 ** n
 
     assert res.states.shape == (N, R, dim, dim)
@@ -228,8 +228,8 @@ def test_run_pubs_returns_exactresults_and_shapes(cfg, pubs):
     assert_is_valid_density_matrix(res.states[-1, -1])
 
 
-def test_run_pubs_is_deterministic_given_seed(cfg, pubs):
-    runner = ExactAerCircuitsRunner(cfg)
+def test_run_pubs_is_deterministic_given_seed(qrc_cfg, pubs):
+    runner = ExactAerCircuitsRunner(qrc_cfg)
 
     res1 = runner.run_pubs(pubs=pubs, seed_simulator=0, optimization_level=1)
     res2 = runner.run_pubs(pubs=pubs, seed_simulator=0, optimization_level=1)
@@ -237,8 +237,8 @@ def test_run_pubs_is_deterministic_given_seed(cfg, pubs):
     assert np.allclose(res1.states, res2.states, atol=0.0, rtol=0.0)
 
 
-def test_run_pubs_raises_on_param_matrix_column_mismatch(cfg, pubs):
-    runner = ExactAerCircuitsRunner(cfg)
+def test_run_pubs_raises_on_param_matrix_column_mismatch(qrc_cfg, pubs):
+    runner = ExactAerCircuitsRunner(qrc_cfg)
 
     if pubs_is_template(pubs):
         qc0, vals0 = _pub_qc_vals(pubs[0])
@@ -256,7 +256,7 @@ def test_run_pubs_raises_on_param_matrix_column_mismatch(cfg, pubs):
 # ----------------------------
 # tests: quantitative (matches independent Aer reference)
 # ----------------------------
-def test_run_pubs_matches_direct_aer_reference(cfg, pubs):
+def test_run_pubs_matches_direct_aer_reference(qrc_cfg, pubs):
     """
     Quantitative check:
       runner.run_pubs(...) must match an independent direct Aer run where we:
@@ -265,10 +265,10 @@ def test_run_pubs_matches_direct_aer_reference(cfg, pubs):
         - run Aer
     Works for both legacy PUBs (many circuits) and template PUBs (one circuit + 3D vals).
     """
-    runner = ExactAerCircuitsRunner(cfg)
+    runner = ExactAerCircuitsRunner(qrc_cfg)
     out = runner.run_pubs(pubs=pubs, seed_simulator=0, optimization_level=1)
 
-    n_res = cfg.num_qubits
+    n_res = qrc_cfg.num_qubits
 
     N, R = pubs_N_R(pubs)
 

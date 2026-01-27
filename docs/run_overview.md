@@ -43,7 +43,7 @@ class BaseQRConfig {
 
 class CircuitFactory {
   <<static>>
-  +create_pubs_dataset_reservoirs_IsingRingSWAP(cfg, angle_positioning, X, lam_0, num_reservoirs, seed, eps) List~Pub~
+  +create_pubs_dataset_reservoirs_IsingRingSWAP(qrc_cfg, angle_positioning, X, lam_0, num_reservoirs, seed, eps) List~Pub~
 }
 
 class Pub {
@@ -75,7 +75,7 @@ QuantumCircuit --> QcMetadataContract : metadata keys
 %% =========================
 class Results {
   <<abstract>>
-  +BaseQRConfig cfg
+  +BaseQRConfig qrc_cfg
   +ndarray states
   +save(file)
   +load(file)
@@ -162,7 +162,7 @@ BaseCircuitsRunner --> BaseFeatureMapsRetriever : provides results
   where:
   - `N` = number of windows (PUBs),
   - `R` = number of reservoir parameterizations per window,
-  - `n` = `cfg.num_qubits`.
+  - `n` = `qrc_cfg.num_qubits`.
 
 ### `BaseCircuitsRunner`
 Abstract interface: `run_pubs(...) -> Results`.
@@ -233,18 +233,18 @@ This yields a feature matrix with the same shape/order as the exact retriever.
 
 ```python
 import numpy as np
-from src.qrc.circuits.configs import RingQRConfig
+from src.qrc.circuits.qrc_configs import RingQRConfig
 from src.qrc.circuits.circuit_factory import CircuitFactory
 from src.qrc.circuits.utils import angle_positioning_tanh
 from src.qrc.run.circuit_run import ExactAerCircuitsRunner
 from src.qrc.run.fmp_retriever import ExactFeatureMapsRetriever
 from src.qrc.circuits.utils import generate_k_local_paulis
 
-cfg = RingQRConfig(input_dim=3, num_qubits=3, seed=0)
+qrc_cfg = RingQRConfig(input_dim=3, num_qubits=3, seed=0)
 
 X = np.random.default_rng(0).normal(size=(10, 20, 3))
 pubs = CircuitFactory.create_pubs_dataset_reservoirs_IsingRingSWAP(
-    cfg=cfg,
+    qrc_cfg=qrc_cfg,
     angle_positioning=angle_positioning_tanh,
     X=X,
     lam_0=0.2,
@@ -252,11 +252,11 @@ pubs = CircuitFactory.create_pubs_dataset_reservoirs_IsingRingSWAP(
     seed=0,
 )
 
-runner = ExactAerCircuitsRunner(cfg)
+runner = ExactAerCircuitsRunner(qrc_cfg)
 results = runner.run_pubs(pubs, device="CPU", optimization_level=1)
 
-observables = generate_k_local_paulis(locality=1, num_qubits=cfg.num_qubits)
-retriever = ExactFeatureMapsRetriever(cfg, observables)
+observables = generate_k_local_paulis(locality=1, num_qubits=qrc_cfg.num_qubits)
+retriever = ExactFeatureMapsRetriever(qrc_cfg, observables)
 Phi = retriever.get_feature_maps(results)  # (N, R*K)
 ```
 

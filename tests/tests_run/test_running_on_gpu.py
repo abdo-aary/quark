@@ -38,7 +38,7 @@ def _get_create_pubs_fn(CircuitFactory):
 def _call_create_pubs_dataset(
     *,
     CircuitFactory,
-    cfg,
+    qrc_cfg,
     angle_positioning,
     X,
     lam_0: float,
@@ -50,18 +50,18 @@ def _call_create_pubs_dataset(
     """
     Dispatch across legacy vs optimized CircuitFactory signatures.
 
-    - Optimized signature: (cfg, angle_positioning, X, parameters_reservoirs, template_pub=...)
-    - Legacy signature: (cfg, angle_positioning, X, lam_0, num_reservoirs, seed, eps, ...)
+    - Optimized signature: (qrc_cfg, angle_positioning, X, parameters_reservoirs, template_pub=...)
+    - Legacy signature: (qrc_cfg, angle_positioning, X, lam_0, num_reservoirs, seed, eps, ...)
     """
     fn = _get_create_pubs_fn(CircuitFactory)
     sig = inspect.signature(fn)
     params = sig.parameters
 
-    kwargs = dict(cfg=cfg, angle_positioning=angle_positioning, X=X)
+    kwargs = dict(qrc_cfg=qrc_cfg, angle_positioning=angle_positioning, X=X)
 
     if "parameters_reservoirs" in params:
         parameters_reservoirs = CircuitFactory.set_reservoirs_parameterizationSWAP(
-            cfg=cfg,
+            qrc_cfg=qrc_cfg,
             angle_positioning=angle_positioning,
             num_reservoirs=num_reservoirs,
             lam_0=lam_0,
@@ -98,9 +98,9 @@ def test_real_gpu_runner_executes_factory_pubs_or_skips():
     X = rng.normal(size=(N, w, d)).astype(float)
 
     num_qubits = 2
-    cfg = RingQRConfig(input_dim=d, num_qubits=num_qubits, seed=0)
+    qrc_cfg = RingQRConfig(input_dim=d, num_qubits=num_qubits, seed=0)
 
-    runner = ExactAerCircuitsRunner(cfg)
+    runner = ExactAerCircuitsRunner(qrc_cfg)
     backend = runner.backend
 
     available = _aer_available_devices(backend)
@@ -111,7 +111,7 @@ def test_real_gpu_runner_executes_factory_pubs_or_skips():
 
     pubs = _call_create_pubs_dataset(
         CircuitFactory=CircuitFactory,
-        cfg=cfg,
+        qrc_cfg=qrc_cfg,
         angle_positioning=angle_positioning_tanh,
         X=X,
         lam_0=0.2,
