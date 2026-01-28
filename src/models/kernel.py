@@ -236,3 +236,100 @@ def tune_matern_grid_train_val(
         "reg": float(reg),
     }
     return best, best_mse
+
+
+####################################################################
+################ Utilities for regularization Sweep ################
+####################################################################
+
+def solve_krr_dual_weights(Ktt: np.ndarray, y: np.ndarray, *, reg: float) -> np.ndarray:
+    """
+    Solve kernel ridge regression dual weights:
+
+        (Ktt + reg * I) alpha = y
+
+    Parameters
+    ----------
+    Ktt : np.ndarray
+        Train Gram matrix, shape (n, n), must be square.
+    y : np.ndarray
+        Targets, shape (n,) or (n, m).
+    reg : float
+        Ridge regularization (> 0).
+
+    Returns
+    -------
+    alpha : np.ndarray
+        Dual weights, same shape as y.
+    """
+    Ktt = np.asarray(Ktt)
+    y = np.asarray(y)
+
+    if Ktt.ndim != 2 or Ktt.shape[0] != Ktt.shape[1]:
+        raise ValueError(f"Ktt must be a square 2D matrix. Got shape {Ktt.shape}.")
+
+    n = Ktt.shape[0]
+    if y.ndim == 1:
+        if y.shape[0] != n:
+            raise ValueError(f"y must have length {n}. Got shape {y.shape}.")
+    elif y.ndim == 2:
+        if y.shape[0] != n:
+            raise ValueError(f"y must have shape (n, m) with n={n}. Got shape {y.shape}.")
+    else:
+        raise ValueError(f"y must be 1D or 2D. Got shape {y.shape}.")
+
+    reg = float(reg)
+    if not np.isfinite(reg) or reg <= 0.0:
+        raise ValueError(f"reg must be a finite positive float. Got {reg}.")
+
+    A = Ktt + reg * np.eye(n, dtype=Ktt.dtype)
+    alpha = np.linalg.solve(A, y)
+    return alpha
+
+
+def rkhs_norm_from_dual_weights(alpha: np.ndarray, Ktt: np.ndarray) -> float | np.ndarray:
+    r"""
+    Compute RKHS norm induced by the kernel:
+
+        ||f||_H = sqrt(alpha^T Ktt alpha)
+
+    Supports:
+      - alpha shape (n,)  -> returns float
+      - alpha shape (n,m) -> returns np.ndarray shape (m,) (column-wise norms)
+
+    Parameters
+    ----------
+    alpha : np.ndarray
+        Dual weights, shape (n,) or (n, m).
+    Ktt : np.ndarray
+        Train Gram matrix, shape (n, n).
+
+    Returns
+    -------
+    float or np.ndarray
+        RKHS norm(s).
+    """
+    Ktt = np.asarray(Ktt)
+    alpha = np.asarray(alpha)
+
+    if Ktt.ndim != 2 or Ktt.shape[0] != Ktt.shape[1]:
+        raise ValueError(f"Ktt must be a square 2D matrix. Got shape {Ktt.shape}.")
+
+    n = Ktt.shape[0]
+
+    if alpha.ndim == 1:
+        if alpha.shape[0] != n:
+            raise ValueError(f"alpha must have length {n}. Got shape {alpha.shape}.")
+        val = float(alpha.T @ Ktt @ alpha)
+        return float(np.sqrt(max(val, 0.0)))
+
+    if alpha.ndim == 2:
+        if alpha.shape[0] != n:
+            raise ValueError(f"alpha must have shape (n, m) with n={n}. Got shape {alpha.shape}.")
+        # column-wise: alpha[:,j]^T K alpha[:,j]
+        KA = Ktt @ alpha  # (n, m)
+        vals = np.sum(alpha * KA, axis=0)  # (m,)
+        vals = np.maximum(vals, 0.0)
+        return np.sqrt(vals)
+
+    raise ValueError(f"alpha must be 1D or 2D. Got shape {alpha.shape}.")

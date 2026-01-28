@@ -739,3 +739,199 @@ class QRCMaternKRRRegressor(BaseEstimator, RegressorMixin):
                 obj.kernel_ = _build_kernel(xi=bp["xi"], nu=bp["nu"])
 
         return obj
+
+    ####################################################################
+    ################# Utility for regularization Sweep #################
+    ####################################################################
+
+    def sweep_regularization(self, reg_grid, *, store: bool = True) -> Dict[str, Any]:
+        """
+        Sweep ridge regularization values *after* fit().
+
+        This method assumes the Matérn hyperparameters (xi, nu) are already fixed by fit().
+        It does NOT re-featurize and does NOT modify the fitted solution (alpha_, kernel_, best_params_).
+
+        It reconstructs the training targets used in KRR from the stored fitted dual weights:
+            y_tr = (Ktt + reg0 I) @ alpha0
+        where reg0 is the regularization used during fit (from best_params_).
+
+        Parameters
+        ----------
+        reg_grid : array-like
+            List/array of ridge regularization values (must be finite and > 0).
+        store : bool, default=True
+            If True, store results in `self.reg_sweep_`.
+
+        Returns
+        -------
+        Dict[str, Any]
+            Dictionary with:
+              - "reg_grid": np.ndarray shape (R,)
+              - "alpha_grid": (R, n_train) for single-output, or (L, R, n_train) for multi-output
+              - "mse_train": (R,) or (L, R)
+              - "mse_test":  (R,) or (L, R)
+              - "rkhs_norm": (R,) or (L, R)
+        """
+        # --- basic fitted-state checks ---
+        if getattr(self, "Phi_full_", None) is None:
+            raise RuntimeError("sweep_regularization requires `Phi_full_` (fit() must have been called).")
+        if getattr(self, "train_idx_", None) is None or getattr(self, "test_idx_", None) is None:
+            raise RuntimeError(
+                "sweep_regularization requires `train_idx_` and `test_idx_` (fit() must have been called).")
+        if getattr(self, "alpha_", None) is None or getattr(self, "kernel_", None) is None:
+            raise RuntimeError("sweep_regularization requires a fitted `alpha_` and `kernel_` (call fit() first).")
+        if getattr(self, "best_params_", None) is None:
+            raise RuntimeError("sweep_regularization requires `best_params_` (call fit() first).")
+        if getattr(self, "y_test_", None) is None:
+            raise RuntimeError("sweep_regularization requires `y_test_` to compute test MSE (call fit() first).")
+
+        reg_arr = np.asarray(reg_grid, dtype=float).reshape(-1)
+        if reg_arr.size == 0:
+            raise ValueError("reg_grid must be non-empty.")
+        if np.any(~np.isfinite(reg_arr)) or np.any(reg_arr <= 0.0):
+            raise ValueError(f"All reg values must be finite and > 0. Got: {reg_arr}")
+
+        # Rebuild train/test features from cached full features (works also after load()).
+        Phi_full = np.asarray(self.Phi_full_)
+        tr_idx = np.asarray(self.train_idx_, dtype=int)
+        te_idx = np.asarray(self.test_idx_, dtype=int)
+
+        Phi_tr = Phi_full[tr_idx]
+        Phi_te = Phi_full[te_idx]
+
+        if self.scaler_ is not None:
+            Phi_tr = self.scaler_.transform(Phi_tr)
+            Phi_te = self.scaler_.transform(Phi_te)
+
+        # Prefer the kernel utilities if present; otherwise fall back to local formulas.
+        try:
+            from src.models.kernel import solve_krr_dual_weights as _solve_krr_dual_weights
+            from src.models.kernel import rkhs_norm_from_dual_weights as _rkhs_norm_from_dual_weights
+        except Exception:
+            def _solve_krr_dual_weights(Ktt: np.ndarray, y: np.ndarray, *, reg: float) -> np.ndarray:
+                A = Ktt + float(reg) * np.eye(Ktt.shape[0], dtype=Ktt.dtype)
+                return np.linalg.solve(A, y)
+
+            def _rkhs_norm_from_dual_weights(alpha: np.ndarray, Ktt: np.ndarray):
+                alpha = np.asarray(alpha)
+                if alpha.ndim == 1:
+                    val = float(alpha.T @ Ktt @ alpha)
+                    return float(np.sqrt(max(val, 0.0)))
+                # (n,m): return (m,)
+                KA = Ktt @ alpha
+                vals = np.sum(alpha * KA, axis=0)
+                vals = np.maximum(vals, 0.0)
+                return np.sqrt(vals)
+
+        R = int(reg_arr.size)
+
+        # -----------------------
+        # Single-output case
+        # -----------------------
+        if not isinstance(self.kernel_, list):
+            kernel = self.kernel_
+            alpha0 = np.asarray(self.alpha_, dtype=float).reshape(-1)
+
+            bp = self.best_params_
+            if not isinstance(bp, dict):
+                raise RuntimeError(f"Expected best_params_ to be dict for single-output, got {type(bp)}")
+
+            reg0 = float(bp.get("reg", self.tuning.get("reg", 1e-6)))
+
+            Ktt = kernel(Phi_tr, Phi_tr)
+            Kvt = kernel(Phi_te, Phi_tr)
+
+            # Reconstruct training targets from fitted solution
+            y_tr = (Ktt + reg0 * np.eye(Ktt.shape[0], dtype=Ktt.dtype)) @ alpha0
+            y_te = np.asarray(self.y_test_, dtype=float).reshape(-1)
+
+            alpha_grid = np.empty((R, Ktt.shape[0]), dtype=float)
+            mse_train = np.empty((R,), dtype=float)
+            mse_test = np.empty((R,), dtype=float)
+            rkhs_norm = np.empty((R,), dtype=float)
+
+            for i, reg in enumerate(reg_arr):
+                a = _solve_krr_dual_weights(Ktt, y_tr, reg=float(reg))
+                a = np.asarray(a, dtype=float).reshape(-1)
+
+                alpha_grid[i] = a
+                yhat_tr = Ktt @ a
+                yhat_te = Kvt @ a
+
+                mse_train[i] = float(np.mean((yhat_tr - y_tr) ** 2))
+                mse_test[i] = float(np.mean((yhat_te - y_te) ** 2))
+                rkhs_norm[i] = float(_rkhs_norm_from_dual_weights(a, Ktt))
+
+            out = {
+                "reg_grid": reg_arr,
+                "alpha_grid": alpha_grid,
+                "mse_train": mse_train,
+                "mse_test": mse_test,
+                "rkhs_norm": rkhs_norm,
+            }
+
+            if store:
+                self.reg_sweep_ = out
+            return out
+
+        # -----------------------
+        # Multi-output case
+        # -----------------------
+        kernels: List[Any] = self.kernel_
+        alpha0 = np.asarray(self.alpha_, dtype=float)
+        if alpha0.ndim != 2:
+            raise RuntimeError(f"Expected alpha_ to be (L, n_train) for multi-output. Got {alpha0.shape}.")
+
+        L, n_train = alpha0.shape
+
+        bp_list = self.best_params_
+        if isinstance(bp_list, dict):
+            bp_list = [bp_list for _ in range(L)]
+        if not isinstance(bp_list, list) or len(bp_list) != L:
+            raise RuntimeError(f"Expected best_params_ to be list[dict] of length {L}. Got {type(self.best_params_)}.")
+
+        y_te = np.asarray(self.y_test_, dtype=float)
+        if y_te.ndim == 1:
+            y_te = y_te.reshape(1, -1)
+        if y_te.shape[0] != L:
+            raise RuntimeError(f"y_test_ first dim must match L={L}. Got y_test_ shape {y_te.shape}.")
+
+        alpha_grid = np.empty((L, R, n_train), dtype=float)
+        mse_train = np.empty((L, R), dtype=float)
+        mse_test = np.empty((L, R), dtype=float)
+        rkhs_norm = np.empty((L, R), dtype=float)
+
+        for l in range(L):
+            kernel = kernels[l]
+            bp = bp_list[l]
+            reg0 = float(bp.get("reg", self.tuning.get("reg", 1e-6)))
+
+            Ktt = kernel(Phi_tr, Phi_tr)
+            Kvt = kernel(Phi_te, Phi_tr)
+
+            # Reconstruct y_tr for this output
+            y_tr = (Ktt + reg0 * np.eye(n_train, dtype=Ktt.dtype)) @ alpha0[l].reshape(-1)
+
+            for i, reg in enumerate(reg_arr):
+                a = _solve_krr_dual_weights(Ktt, y_tr, reg=float(reg))
+                a = np.asarray(a, dtype=float).reshape(-1)
+
+                alpha_grid[l, i] = a
+                yhat_tr = Ktt @ a
+                yhat_te = Kvt @ a
+
+                mse_train[l, i] = float(np.mean((yhat_tr - y_tr) ** 2))
+                mse_test[l, i] = float(np.mean((yhat_te - y_te[l].reshape(-1)) ** 2))
+                rkhs_norm[l, i] = float(_rkhs_norm_from_dual_weights(a, Ktt))
+
+        out = {
+            "reg_grid": reg_arr,
+            "alpha_grid": alpha_grid,
+            "mse_train": mse_train,
+            "mse_test": mse_test,
+            "rkhs_norm": rkhs_norm,
+        }
+
+        if store:
+            self.reg_sweep_ = out
+        return out
