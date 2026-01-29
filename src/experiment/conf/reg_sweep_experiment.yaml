@@ -1,0 +1,52 @@
+# src/experiment/conf/reg_sweep_experiment.yaml
+#
+# Entry-point config for Section 5.1 regularization sweep experiments.
+
+defaults:
+  - data: config
+  - model: qrc_matern_krr
+  - _self_
+
+seed: 12345
+
+# Directory containing a saved dataset artifact (DatasetArtifact.root).
+# Use `???` to force specifying it on the CLI / from a notebook.
+dataset_path: ???
+
+# Whether Experiment.from_paths should instantiate functional objects.
+instantiate_functionals: false
+
+reg_sweep:
+  enabled: true
+  # Regularization grid for lambda_reg (ridge). Spans 1e-12..1e0 in half-decades.
+  reg_grid:
+    - 1e-12
+    - 5e-12
+    - 1e-11
+    - 5e-11
+    - 1e-10
+    - 5e-10
+    - 1e-9
+    - 5e-9
+    - 1e-8
+    - 5e-8
+    - 1e-7
+    - 5e-7
+    - 1e-6
+    - 5e-6
+    - 1e-5
+    - 5e-5
+    - 1e-4
+    - 5e-4
+    - 1e-3
+    - 5e-3
+    - 1e-2
+    - 5e-2
+    - 1e-1
+    - 5e-1
+    - 1.0
+
+output:
+  # Suggested paths for an external runner script/notebook.
+  model_dir: ${hydra:run.dir}/model
+  sweep_path: ${hydra:run.dir}/reg_sweep.npz

@@ -20,7 +20,7 @@ unit tests, and future CLI entrypoints.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -60,14 +60,19 @@ class Experiment:
     model: QRCMaternKRRRegressor
     dataset_artifact: Optional[DatasetArtifact] = None
 
+    # Results of the last regularization sweep executed via :meth:`run_reg_sweep`.
+    # Stored here to make plotting and downstream reporting easy without re-running
+    # the sweep.
+    reg_sweep_: Optional[Dict[str, Any]] = field(default=None, init=False, repr=False)
+
     @classmethod
     def from_paths(
-        cls,
-        *,
-        dataset_path: str | Path,
-        model_cfg: DictConfig | None = None,
-        model: QRCMaternKRRRegressor | None = None,
-        instantiate_functionals: bool = True,
+            cls,
+            *,
+            dataset_path: str | Path,
+            model_cfg: DictConfig | None = None,
+            model: QRCMaternKRRRegressor | None = None,
+            instantiate_functionals: bool = True,
     ) -> "Experiment":
         """Build an experiment from a dataset path plus either a model cfg or model instance."""
 
@@ -132,3 +137,41 @@ class Experiment:
 
         self.model = loaded
         return loaded
+
+    def run_reg_sweep(self, reg_grid, **sweep_kwargs: Any) -> Dict[str, Any]:
+        """Run a post-fit sweep over ridge regularization values.
+        Thin wrapper around
+        `QRCMaternKRRRegressor.sweep_regularization`. Assumes `.fit()` was called
+        already (so xi/nu are fixed and cached features are available).
+        """
+
+        out = self.model.sweep_regularization(reg_grid, **sweep_kwargs)
+        self.reg_sweep_ = out
+        return out
+
+    def run_reg_sweep_from_cfg(self, cfg: DictConfig | dict) -> Optional[Dict[str, Any]]:
+        """Run the sweep if enabled in a Hydra/OmegaConf config.
+        Expected:
+            cfg.reg_sweep.enabled: bool
+            cfg.reg_sweep.reg_grid: list[float]
+        """
+        reg_sweep = None
+
+        if isinstance(cfg, DictConfig):
+            reg_sweep = cfg.get("reg_sweep", None)
+        elif isinstance(cfg, dict):
+            reg_sweep = cfg.get("reg_sweep", None)
+
+        if reg_sweep is None:
+            return None
+        enabled = bool(reg_sweep.get("enabled", True))
+
+        if not enabled:
+            return None
+
+        reg_grid = reg_sweep.get("reg_grid")
+
+        if reg_grid is None:
+            raise ValueError("cfg.reg_sweep.reg_grid is required when reg_sweep.enabled=true")
+
+        return self.run_reg_sweep(reg_grid)
