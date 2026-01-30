@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal, Optional, Tuple
 
 import numpy as np
@@ -62,6 +62,20 @@ def _sample_orthonormal_pair(rng: np.random.Generator, d: int) -> Tuple[np.ndarr
     raise RuntimeError("Could not sample an orthonormal pair")
 
 
+def _sample_unit_vector_orthogonal_to(rng: np.random.Generator, u: np.ndarray) -> np.ndarray:
+    """Sample a unit vector v such that <u,v> = 0 (up to numerical tolerance)."""
+    u = _unit_norm(u)
+    d = int(u.shape[0])
+    for _ in range(300):
+        v = rng.normal(size=d)
+        # Gram–Schmidt
+        v = v - float(np.dot(u, v)) * u
+        n = float(np.linalg.norm(v))
+        if np.isfinite(n) and n > 1e-12:
+            return (v / n).astype(float)
+    raise RuntimeError("Could not sample a unit vector orthogonal to u")
+
+
 def _fading_projection(X_win: np.ndarray, vec: np.ndarray, alpha: float) -> float:
     r"""Window-truncated fading sum.
 
@@ -90,24 +104,32 @@ class OneStepForecastFunctional(BaseLabelFunctional):
     Using the common window convention (last element is the “next/current” point):
         y = <u, X_win[-1]>,
     with u on the unit sphere (sampled if not provided).
+
+    IMPORTANT: if u is not provided, we sample it ONCE (at first call) and reuse it
+    for all windows, to avoid pathological "different task per sample" labels.
     """
 
     u: Optional[np.ndarray] = None
+    _u_cached: Optional[np.ndarray] = field(default=None, init=False, repr=False, compare=False)
+
     nonlinearity: Literal["none", "tanh", "sigmoid"] = "none"
     noise: LabelNoise = LabelNoise(0.0)
+
+    def _resolve_u(self, d: int, rng: np.random.Generator) -> np.ndarray:
+        if self.u is not None:
+            u = np.asarray(self.u, dtype=float).reshape(-1)
+            if u.shape[0] != d:
+                raise ValueError(f"u must have shape (d,), got {u.shape} with d={d}")
+            return _unit_norm(u)
+
+        if self._u_cached is None:
+            object.__setattr__(self, "_u_cached", _sample_unit_vector(rng, d))
+        return np.asarray(self._u_cached, dtype=float).reshape(-1)
 
     def __call__(self, X_win: np.ndarray, rng: np.random.Generator) -> float:
         _, d = _check_X_win(X_win)
 
-        u = self.u
-        if u is None:
-            u = _sample_unit_vector(rng, d)
-        else:
-            u = np.asarray(u, dtype=float).reshape(-1)
-            if u.shape[0] != d:
-                raise ValueError(f"u must have shape (d,), got {u.shape} with d={d}")
-            u = _unit_norm(u)
-
+        u = self._resolve_u(d, rng)
         z = float(X_win[-1, :] @ u)
         y = _apply_nonlinearity(z, self.nonlinearity)
         return float(self.noise.add(y, rng))
@@ -118,25 +140,33 @@ class ExpFadingLinearFunctional(BaseLabelFunctional):
     r"""Exponential fading linear functional (Appendix E.2).
 
     y = \sum_{k=0}^{w-1} alpha^k <u, x_{t-k}>, with x_t = X_win[-1].
+
+    IMPORTANT: if u is not provided, we sample it ONCE (at first call) and reuse it
+    for all windows, to avoid pathological "different task per sample" labels.
     """
 
     alpha: float = 0.8
     u: Optional[np.ndarray] = None
+    _u_cached: Optional[np.ndarray] = field(default=None, init=False, repr=False, compare=False)
+
     nonlinearity: Literal["none", "tanh", "sigmoid"] = "none"
     noise: LabelNoise = LabelNoise(0.0)
+
+    def _resolve_u(self, d: int, rng: np.random.Generator) -> np.ndarray:
+        if self.u is not None:
+            u = np.asarray(self.u, dtype=float).reshape(-1)
+            if u.shape[0] != d:
+                raise ValueError(f"u must have shape (d,), got {u.shape} with d={d}")
+            return _unit_norm(u)
+
+        if self._u_cached is None:
+            object.__setattr__(self, "_u_cached", _sample_unit_vector(rng, d))
+        return np.asarray(self._u_cached, dtype=float).reshape(-1)
 
     def __call__(self, X_win: np.ndarray, rng: np.random.Generator) -> float:
         _, d = _check_X_win(X_win)
 
-        u = self.u
-        if u is None:
-            u = _sample_unit_vector(rng, d)
-        else:
-            u = np.asarray(u, dtype=float).reshape(-1)
-            if u.shape[0] != d:
-                raise ValueError(f"u must have shape (d,), got {u.shape} with d={d}")
-            u = _unit_norm(u)
-
+        u = self._resolve_u(d, rng)
         z = _fading_projection(X_win, u, self.alpha)
         y = _apply_nonlinearity(z, self.nonlinearity)
         return float(self.noise.add(y, rng))
@@ -154,42 +184,57 @@ class VolteraFunctional(BaseLabelFunctional):
 
     If v is provided and orthogonalize_v=True, we Gram–Schmidt v against u
     and then normalize.
+
+    IMPORTANT:
+      - If u and/or v are not provided, we sample them ONCE (at first call) and reuse
+        them for all windows.
+      - If v is not provided and orthogonalize_v=True, we sample v orthogonal to the
+        *actual* u used (not an unrelated random u).
     """
 
     alpha: float = 0.8
     u: Optional[np.ndarray] = None
     v: Optional[np.ndarray] = None
+    _u_cached: Optional[np.ndarray] = field(default=None, init=False, repr=False, compare=False)
+    _v_cached: Optional[np.ndarray] = field(default=None, init=False, repr=False, compare=False)
+
     orthogonalize_v: bool = True
     nonlinearity: Literal["none", "tanh", "sigmoid"] = "none"
     noise: LabelNoise = LabelNoise(0.0)
 
-    def __call__(self, X_win: np.ndarray, rng: np.random.Generator) -> float:
-        _, d = _check_X_win(X_win)
-
-        # u
-        u = self.u
-        if u is None:
-            u = _sample_unit_vector(rng, d)
-        else:
-            u = np.asarray(u, dtype=float).reshape(-1)
+    def _resolve_u(self, d: int, rng: np.random.Generator) -> np.ndarray:
+        if self.u is not None:
+            u = np.asarray(self.u, dtype=float).reshape(-1)
             if u.shape[0] != d:
                 raise ValueError(f"u must have shape (d,), got {u.shape} with d={d}")
-            u = _unit_norm(u)
+            return _unit_norm(u)
 
-        # v
-        v = self.v
-        if v is None:
-            if self.orthogonalize_v:
-                _, v = _sample_orthonormal_pair(rng, d)
-            else:
-                v = _sample_unit_vector(rng, d)
-        else:
-            v = np.asarray(v, dtype=float).reshape(-1)
+        if self._u_cached is None:
+            object.__setattr__(self, "_u_cached", _sample_unit_vector(rng, d))
+        return np.asarray(self._u_cached, dtype=float).reshape(-1)
+
+    def _resolve_v(self, u: np.ndarray, d: int, rng: np.random.Generator) -> np.ndarray:
+        if self.v is not None:
+            v = np.asarray(self.v, dtype=float).reshape(-1)
             if v.shape[0] != d:
                 raise ValueError(f"v must have shape (d,), got {v.shape} with d={d}")
             if self.orthogonalize_v:
                 v = v - float(np.dot(u, v)) * u
-            v = _unit_norm(v)
+            return _unit_norm(v)
+
+        if self._v_cached is None:
+            if self.orthogonalize_v:
+                v = _sample_unit_vector_orthogonal_to(rng, u)
+            else:
+                v = _sample_unit_vector(rng, d)
+            object.__setattr__(self, "_v_cached", v)
+        return np.asarray(self._v_cached, dtype=float).reshape(-1)
+
+    def __call__(self, X_win: np.ndarray, rng: np.random.Generator) -> float:
+        _, d = _check_X_win(X_win)
+
+        u = self._resolve_u(d, rng)
+        v = self._resolve_v(u, d, rng)
 
         Lu = _fading_projection(X_win, u, self.alpha)
         Lv = _fading_projection(X_win, v, self.alpha)

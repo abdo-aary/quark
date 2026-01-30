@@ -10,3 +10,5 @@ PROJECT_ROOT_PATH = os.path.dirname(_file_path)
 STORAGE_PATH = os.path.join(PROJECT_ROOT_PATH, 'storage')
 EXPERIMENTS_PATH = os.path.join(STORAGE_PATH, 'experiments')
 NOTEBOOKS_PATH = os.path.join(PROJECT_ROOT_PATH, 'notebooks')
+
+os.environ.setdefault("PROJECT_ROOT", PROJECT_ROOT_PATH)
