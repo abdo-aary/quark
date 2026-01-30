@@ -310,7 +310,7 @@ class QRCMaternKRRRegressor(BaseEstimator, RegressorMixin):
 
             - `qrc.cfg`: Hydra instantiable circuit config (e.g., RingQRConfig)
             - `qrc.runner`: Hydra instantiable runner class (constructed with qrc_cfg)
-            - `qrc.runner_kwargs`: dict of kwargs forwarded to runner execution (not ctor)
+            - `qrc.runner.runner_kwargs`: dict of kwargs forwarded to runner execution (not ctor)
             - `qrc.features.retriever`: Hydra instantiable FMP retriever (qrc_cfg, observables)
             - `qrc.features.observables`: Hydra instantiable builder returning list[SparsePauliOp]
             - `qrc.features.kwargs`: dict of kwargs forwarded to retriever execution (not ctor)
@@ -333,13 +333,23 @@ class QRCMaternKRRRegressor(BaseEstimator, RegressorMixin):
         model_cfg = cfg.model if "model" in cfg else cfg
         qrc_node = model_cfg.qrc
 
-        qrc_cfg = instantiate(qrc_node.cfg)
 
         observables = instantiate(qrc_node.features.observables)
-        runner = instantiate(qrc_node.runner, qrc_cfg=qrc_cfg)
-        fmp = instantiate(qrc_node.features.retriever, qrc_cfg=qrc_cfg, observables=observables)
 
-        runner_kwargs = _to_plain_dict(qrc_node.get("runner_kwargs"))
+        qrc_cfg = instantiate(qrc_node.cfg)
+
+        # 1) Extract runtime kwargs (stay in config, but not passed to __init__)
+        runner_kwargs = _to_plain_dict(qrc_node.runner.get("runner_kwargs"))
+
+        # 2) Build a clean config node for instantiation (remove runner_kwargs)
+        runner_cfg_dict = OmegaConf.to_container(qrc_node.runner, resolve=True)
+        runner_cfg_dict.pop("runner_kwargs", None)
+        runner_cfg_clean = OmegaConf.create(runner_cfg_dict)
+
+        # 3) Instantiate the runner (only ctor kwargs)
+        runner = instantiate(runner_cfg_clean, qrc_cfg=qrc_cfg)
+
+        fmp = instantiate(qrc_node.features.retriever, qrc_cfg=qrc_cfg, observables=observables)
         fmp_kwargs = _to_plain_dict(qrc_node.features.get("kwargs"))
 
         pubs_container = OmegaConf.to_container(qrc_node.pubs, resolve=True)

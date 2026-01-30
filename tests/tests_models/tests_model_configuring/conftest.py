@@ -44,7 +44,7 @@ def make_in_memory_experiment_cfg(
     pubs_family : str, default="ising_ring_swap"
         PUBS family name to pass through wiring.
     include_runner_kwargs : bool, default=True
-        Whether to include `qrc.runner_kwargs`.
+        Whether to include `qrc.runner.runner_kwargs`.
     include_fmp_kwargs : bool, default=True
         Whether to include `qrc.features.kwargs`.
     standardize : bool, default=True
@@ -109,7 +109,7 @@ def make_in_memory_experiment_cfg(
     }
 
     if include_runner_kwargs:
-        cfg_dict["model"]["qrc"]["runner_kwargs"] = {"device": "CPU", "shots": 128}
+        cfg_dict["model"]["qrc"]["runner"]["runner_kwargs"] = {"device": "CPU", "shots": 128}
     if include_fmp_kwargs:
         cfg_dict["model"]["qrc"]["features"]["kwargs"] = {"batch_size": 16}
 

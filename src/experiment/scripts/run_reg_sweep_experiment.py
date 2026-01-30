@@ -1,15 +1,18 @@
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 from typing import Any, Dict
 
 import hydra
 import numpy as np
 from omegaconf import DictConfig, OmegaConf
+from src.settings import PROJECT_ROOT_PATH
 
 from src.experiment.experiment import Experiment
 
+os.environ["PROJECT_ROOT"] = str(Path(PROJECT_ROOT_PATH))
 log = logging.getLogger(__name__)
 
 

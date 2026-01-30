@@ -14,7 +14,7 @@ They allow testing `.from_config(cfg)` without requiring Qiskit Aer or running s
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, List
+from typing import Any, List, Dict
 
 
 @dataclass

@@ -113,8 +113,8 @@ def _cfg_dict(
                 },
                 "runner": {
                     "_target_": "src.qrc.run.circuit_run.ExactAerCircuitsRunner",
+                    "runner_kwargs": dict(runner_kwargs),
                 },
-                "runner_kwargs": dict(runner_kwargs),
                 "features": {
                     "observables": observables_cfg,
                     "retriever": retriever_cfg,
