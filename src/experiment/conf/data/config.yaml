@@ -1,5 +1,5 @@
 defaults:
-  - sampling: default
+  - sampling: default    # choose between default or tiny
   - process: varma
   - functionals: e2_three
   - noise: none

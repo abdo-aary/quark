@@ -333,7 +333,6 @@ class QRCMaternKRRRegressor(BaseEstimator, RegressorMixin):
         model_cfg = cfg.model if "model" in cfg else cfg
         qrc_node = model_cfg.qrc
 
-
         observables = instantiate(qrc_node.features.observables)
 
         qrc_cfg = instantiate(qrc_node.cfg)
@@ -349,8 +348,18 @@ class QRCMaternKRRRegressor(BaseEstimator, RegressorMixin):
         # 3) Instantiate the runner (only ctor kwargs)
         runner = instantiate(runner_cfg_clean, qrc_cfg=qrc_cfg)
 
-        fmp = instantiate(qrc_node.features.retriever, qrc_cfg=qrc_cfg, observables=observables)
-        fmp_kwargs = _to_plain_dict(qrc_node.features.get("kwargs"))
+        # Extract runtime kwargs (preferred: retriever.kwargs, fallback: features.kwargs legacy)
+        fmp_kwargs = _to_plain_dict(qrc_node.features.retriever.get("kwargs"))
+        if not fmp_kwargs:
+            fmp_kwargs = _to_plain_dict(qrc_node.features.get("kwargs"))
+
+        # Build a clean retriever config node for instantiation (remove kwargs)
+        retriever_cfg_dict = OmegaConf.to_container(qrc_node.features.retriever, resolve=True)
+        retriever_cfg_dict.pop("kwargs", None)
+        retriever_cfg_clean = OmegaConf.create(retriever_cfg_dict)
+
+        # Instantiate the retriever (only ctor kwargs)
+        fmp = instantiate(retriever_cfg_clean, qrc_cfg=qrc_cfg, observables=observables)
 
         pubs_container = OmegaConf.to_container(qrc_node.pubs, resolve=True)
         pubs_family = pubs_container["family"]

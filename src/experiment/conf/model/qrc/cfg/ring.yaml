@@ -1,4 +1,4 @@
-_target_: src.qrc.circuits.configs.RingQRConfig
+_target_: src.qrc.circuits.qrc_configs.RingQRConfig
 input_dim: ${data.sampling.d}
 num_qubits: 5
 seed: ${seed}

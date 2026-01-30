@@ -111,7 +111,7 @@ def make_in_memory_experiment_cfg(
     if include_runner_kwargs:
         cfg_dict["model"]["qrc"]["runner"]["runner_kwargs"] = {"device": "CPU", "shots": 128}
     if include_fmp_kwargs:
-        cfg_dict["model"]["qrc"]["features"]["kwargs"] = {"batch_size": 16}
+        cfg_dict["model"]["qrc"]["features"]["retriever"]["kwargs"] = {"batch_size": 16}
 
     return OmegaConf.create(cfg_dict)
 

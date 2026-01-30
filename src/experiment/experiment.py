@@ -30,25 +30,54 @@ from src.data.factory import DatasetArtifact, load_windows_dataset
 from src.data.generate.base import WindowsDataset
 from src.models.qrc_matern_krr import QRCMaternKRRRegressor
 
+_FRIENDLY_FUNCTIONAL_NAMES_BY_CLASS = {
+    "OneStepForecastFunctional": "Single step forecasting",
+    "ExpFadingLinearFunctional": "Exponential fading",
+    "VolteraFunctional": "Voltera",
+}
+
+_FRIENDLY_FUNCTIONAL_NAMES_BY_KIND = {
+    # Order is the same as your e2_three functional list
+    "e2_three": ["Single step forecasting", "Exponential fading", "Voltera"],
+}
 
 def _default_functional_names(ds: WindowsDataset) -> list[str]:
     """Best-effort functional names for reporting.
 
     Priority order:
-    1) class names of instantiated label functionals
-    2) meta["functionals_kind"] + index
-    3) fallback "functional_{i}"
+    1) friendly names from instantiated label functionals (if available)
+    2) explicit meta["functionals_names"] (if present)
+    3) friendly names from meta["functionals_kind"] (if known)
+    4) meta["functionals_kind"] + index
+    5) fallback "functional_{i}"
     """
     L = int(ds.y.shape[0]) if getattr(ds.y, "ndim", 0) >= 2 else 1
 
+    # 1) If we have instantiated functionals, name by class (then map to friendly)
     if ds.label_functionals and len(ds.label_functionals) == L:
-        return [lf.__class__.__name__ for lf in ds.label_functionals]
+        raw = [lf.__class__.__name__ for lf in ds.label_functionals]
+        return [_FRIENDLY_FUNCTIONAL_NAMES_BY_CLASS.get(r, r) for r in raw]
 
     kind = None
+    names = None
     if isinstance(ds.meta, dict):
         kind = ds.meta.get("functionals_kind")
+        # 2) Optional explicit names stored in meta (future-proof)
+        names = ds.meta.get("functionals_names")
+
+    if isinstance(names, (list, tuple)) and len(names) == L and all(isinstance(x, str) for x in names):
+        return list(names)
+
     if kind is None:
         return [f"functional_{i}" for i in range(L)]
+
+    # 3) Known kind -> friendly names
+    if kind in _FRIENDLY_FUNCTIONAL_NAMES_BY_KIND:
+        friendly = _FRIENDLY_FUNCTIONAL_NAMES_BY_KIND[kind]
+        if len(friendly) == L:
+            return list(friendly)
+
+    # 4) Default
     return [f"{kind}[{i}]" for i in range(L)]
 
 
@@ -233,13 +262,13 @@ class Experiment:
         return rows
 
     def save_reg_sweep_artifacts(
-        self,
-        out_dir: str | Path,
-        *,
-        formats: tuple[str, ...] = ("pdf", "png"),
-        csv_name: str = "reg_sweep_metrics.csv",
-        train_plot_name: str = "reg_sweep_train",
-        test_plot_name: str = "reg_sweep_test",
+            self,
+            out_dir: str | Path,
+            *,
+            formats: tuple[str, ...] = ("pdf", "png"),
+            csv_name: str = "reg_sweep_metrics.csv",
+            train_plot_name: str = "reg_sweep_train",
+            test_plot_name: str = "reg_sweep_test",
     ) -> Dict[str, Path]:
         """Save CSV + train/test plots for the latest regularization sweep.
 

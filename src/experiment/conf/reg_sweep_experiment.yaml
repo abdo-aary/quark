@@ -45,23 +45,22 @@ reg_sweep:
     - 1e-1
     - 5e-1
     - 1.0
-  artifacts:
-    enabled: true
-    out_dir: ${hydra:run.dir}/artifacts
-    formats: [ "pdf" ]
 
 output:
-  # Suggested paths for an external runner script/notebook.
-  save_dir: ${oc.env:PROJECT_ROOT}/${output.root_dir}/storage/results/
+  # Base directory for experiment runs
+  save_dir: ${oc.env:PROJECT_ROOT}/storage/results
 
-  model_dir: ${hydra:run.dir}/model
-  sweep_path: ${hydra:run.dir}/reg_sweep.npz
+  # Paths inside the *current* Hydra run directory
+  model_dir: ${hydra:runtime.output_dir}/model
+  sweep_path: ${hydra:runtime.output_dir}/reg_sweep.npz
+  artifacts_dir: ${hydra:runtime.output_dir}/artifacts
+  plot_formats: ["pdf"]
 
 hydra:
   run:
-    dir: ${output.save_dir}/reg_sweep/${now:%Y-%m-%d_%H-%M-%S}
+    dir: ${output.save_dir}/reg_sweep/${data.sampling.name}/${now:%Y-%m-%d_%H-%M-%S}
 
   job_logging:
     handlers:
       file:
-        filename: ${hydra.run.dir}/reg_sweep.log
+        filename: ${hydra:runtime.output_dir}/reg_sweep.log

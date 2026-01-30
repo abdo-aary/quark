@@ -5,3 +5,4 @@ s: 100
 burn_in: 200
 bounded: tanh      # tanh | clip | none
 clip: 0.999
+name: full

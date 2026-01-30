@@ -1,1 +1,3 @@
 _target_: src.qrc.run.cs_fmp_retriever.CSFeatureMapsRetriever
+kwargs:
+  shots: 1000
