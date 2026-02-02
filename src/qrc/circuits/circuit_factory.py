@@ -147,8 +147,8 @@ class CircuitFactory:
         for i in range(n):
             qc.cswap(coin, res[i], aux[i])
 
-        qc.reset(coin)
-        qc.reset(aux)
+        # qc.reset(coin)
+        # qc.reset(aux)
 
         qc.metadata["z"] = z
         qc.metadata["J"] = zz_params
