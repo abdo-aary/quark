@@ -1,7 +1,7 @@
 defaults:
   - qrc/cfg@qrc.cfg: ring
   - qrc/runner@qrc.runner: exact_aer
-  - qrc/features/retriever@qrc.features.retriever: exact
+  - qrc/features/retriever@qrc.features.retriever: cs
   - qrc/features/observables@qrc.features.observables: k_local_pauli
   - qrc/pubs@qrc.pubs: ising_ring
   - training@training: default

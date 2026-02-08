@@ -7,6 +7,9 @@ defaults:
   - model: qrc_matern_krr
   - _self_
 
+experiment:
+  name: c-shadows       # Or set ``exact``.
+
 seed: 12345
 
 # Directory containing a saved dataset artifact (DatasetArtifact.root).
@@ -43,6 +46,9 @@ reg_sweep:
     - 5e2
     - 1e3
     - 5e3
+    - 1e4
+    - 5e4
+    - 1e5
 
 output:
   # Base directory for experiment runs
@@ -56,7 +62,7 @@ output:
 
 hydra:
   run:
-    dir: ${output.save_dir}/reg_sweep/${data.sampling.name}/${now:%Y-%m-%d_%H-%M-%S}
+    dir: ${output.save_dir}/reg_sweep/${experiment.name}/${data.sampling.name}/N=${data.sampling.N}__w=${data.sampling.w}__d=${data.sampling.d}__s=${data.sampling.s}/${now:%Y-%m-%d_%H-%M-%S}
 
   job_logging:
     handlers:

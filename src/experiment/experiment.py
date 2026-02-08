@@ -24,6 +24,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+import numpy as np
 from omegaconf import DictConfig
 
 from src.data.factory import DatasetArtifact, load_windows_dataset
@@ -40,6 +41,7 @@ _FRIENDLY_FUNCTIONAL_NAMES_BY_KIND = {
     # Order is the same as your e2_three functional list
     "e2_three": ["Single step forecasting", "Exponential fading", "Voltera"],
 }
+
 
 
 def _default_functional_names(ds: WindowsDataset) -> list[str]:
@@ -164,6 +166,25 @@ class Experiment:
         Phi_tr = loaded.Phi_full_[loaded.train_idx_]
         Phi_tr = loaded.scaler_.transform(Phi_tr) if loaded.scaler_ is not None else Phi_tr
         loaded.X_train_features_ = Phi_tr
+
+        X = np.asarray(self.dataset.X)
+        y_arr = np.asarray(self.dataset.y)
+        N = int(X.shape[0])
+
+        if y_arr.ndim == 1:
+            y2d = y_arr.reshape(1, -1)
+        elif y_arr.ndim == 2:
+            if y_arr.shape[1] == N:
+                y2d = y_arr
+            elif y_arr.shape[0] == N:
+                y2d = y_arr.T
+            else:
+                raise ValueError(f"Cannot align y={y_arr.shape} with N={N}.")
+        else:
+            raise ValueError(f"y must be 1D or 2D. Got {y_arr.shape}.")
+
+        y_te = y2d[:, np.asarray(loaded.test_idx_, dtype=int)]
+        loaded.y_test_ = y_te[0] if y_te.shape[0] == 1 else y_te
 
         self.model = loaded
         return loaded

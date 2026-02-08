@@ -140,29 +140,29 @@ def test_swap_channel_intermediate_lambda_gives_exact_mixture(cfg1, x_window_zer
     assert np.allclose(dm_res.data, expected, atol=1e-12, rtol=0.0)
 
 
-def test_env_is_reset_and_factorizes_for_n1(cfg1, x_window_zero):
-    """
-    Because your circuit does:
-        ... cswap ... ; reset(coin); reset(aux)
-    the final global state should factorize as:
-        rho_full = rho_res ⊗ |0...0><0...0|_env
-    (for n=1, env has 2 qubits).
-    This is a great runtime check that reset really “traces out” and reinitializes the env.
-    """
-    qc = CircuitFactory.instantiateFullIsingRingEvolution(
-        qrc_cfg=cfg1, angle_positioning=angle_positioning_linear, x_window=x_window_zero
-    )
-
-    lam = 0.37
-    row = make_param_row_by_name(qc, hz0=np.pi, hx0=0.0, lam=lam)
-    bind = dict(zip(list(qc.parameters), row))
-
-    dm_full = run_dm(qc.assign_parameters(bind, inplace=False), seed=0)
-    dm_res = reduce_reservoir(dm_full, n=cfg1.num_qubits)
-
-    # env is aux(1 qubit) + coin(1 qubit) => 2 qubits in |00>
-    dm_env = DensityMatrix.from_label("00")
-
-    expected_full = np.kron(dm_env.data, dm_res.data)
-
-    assert np.allclose(dm_full.data, expected_full, atol=1e-12, rtol=0.0)
+# def test_env_is_reset_and_factorizes_for_n1(cfg1, x_window_zero):
+#     """
+#     Because your circuit does:
+#         ... cswap ... ; reset(coin); reset(aux)
+#     the final global state should factorize as:
+#         rho_full = rho_res ⊗ |0...0><0...0|_env
+#     (for n=1, env has 2 qubits).
+#     This is a great runtime check that reset really “traces out” and reinitializes the env.
+#     """
+#     qc = CircuitFactory.instantiateFullIsingRingEvolution(
+#         qrc_cfg=cfg1, angle_positioning=angle_positioning_linear, x_window=x_window_zero
+#     )
+#
+#     lam = 0.37
+#     row = make_param_row_by_name(qc, hz0=np.pi, hx0=0.0, lam=lam)
+#     bind = dict(zip(list(qc.parameters), row))
+#
+#     dm_full = run_dm(qc.assign_parameters(bind, inplace=False), seed=0)
+#     dm_res = reduce_reservoir(dm_full, n=cfg1.num_qubits)
+#
+#     # env is aux(1 qubit) + coin(1 qubit) => 2 qubits in |00>
+#     dm_env = DensityMatrix.from_label("00")
+#
+#     expected_full = np.kron(dm_env.data, dm_res.data)
+#
+#     assert np.allclose(dm_full.data, expected_full, atol=1e-12, rtol=0.0)

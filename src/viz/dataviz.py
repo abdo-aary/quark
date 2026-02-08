@@ -230,6 +230,57 @@ def plot_windows_heatmap_with_labels(
     return fig
 
 
+def _reconstruct_time_series_from_windows(
+    X: np.ndarray,
+    *,
+    burn_in: int,
+    s: int,
+    include_gaps: bool = True,
+    start_window: int = 0,
+    max_windows: Optional[int] = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Build a chronological (t, X_t) view from windowed data X of shape (N,w,d).
+
+    We use the exact indexing implied by BetaMixingGenerator:
+      window i covers times [burn_in + i*(w+s), ..., burn_in + i*(w+s) + (w-1)].
+
+    If include_gaps=True and s>0, we insert NaNs for the s missing time steps
+    between consecutive windows so matplotlib draws breaks in the curves.
+    """
+    X = np.asarray(X, dtype=float)
+    if X.ndim != 3:
+        raise ValueError(f"X must be (N,w,d), got {X.shape}")
+
+    N, w, d = X.shape
+    if start_window < 0 or start_window >= N:
+        raise ValueError(f"start_window={start_window} out of range [0,{N-1}]")
+
+    end_window = N if max_windows is None else min(N, start_window + int(max_windows))
+    stride = w + int(s)
+
+    t_blocks = []
+    x_blocks = []
+
+    for i in range(start_window, end_window):
+        t0 = int(burn_in) + i * stride
+        t_block = t0 + np.arange(w, dtype=int)           # (w,)
+        x_block = X[i]                                   # (w,d)
+        t_blocks.append(t_block)
+        x_blocks.append(x_block)
+
+        # insert a NaN gap so the line breaks visually (optional)
+        if include_gaps and s > 0 and i < end_window - 1:
+            t_gap = t0 + w + np.arange(s, dtype=int)     # (s,)
+            x_gap = np.full((s, d), np.nan, dtype=float)
+            t_blocks.append(t_gap)
+            x_blocks.append(x_gap)
+
+    t = np.concatenate(t_blocks, axis=0)
+    x = np.concatenate(x_blocks, axis=0)
+    return t, x
+
+
 # ---------------------------
 # DataVisualizer class
 # ---------------------------
@@ -523,3 +574,93 @@ class DataVisualizer:
             labels_names=self.label_names(),
             figsize=figsize,
         )
+
+@dataclass
+class ProcessVisualizer:
+    """
+    Load a saved windows dataset (DatasetArtifact) and plot the underlying process view.
+
+    Note: the full latent path is not stored; we reconstruct a chronological view from
+    the stored windows. This is exact on the window segments, and shows gaps if s>0.
+    """
+    dataset_path: Union[str, Path]
+    instantiate_functionals: bool = False
+
+    ds: Optional[WindowsDataset] = None
+
+    def load(self) -> "ProcessVisualizer":
+        ds, _ = load_windows_dataset(self.dataset_path, instantiate_functionals=self.instantiate_functionals)
+        self.ds = ds
+        return self
+
+    def plot_process(
+            self,
+            *,
+            dims: Optional[Sequence[int]] = None,
+            start_window: int = 0,
+            max_windows: Optional[int] = 50,
+            include_gaps: bool = True,
+            x_axis: Literal["time", "relative"] = "time",
+            title: Optional[str] = None,
+            figsize: Tuple[int, int] = (12, 4),
+    ) -> plt.Figure:
+        """
+        Plot X_t (d curves) in chronological order.
+
+        Parameters
+        ----------
+        dims:
+            Which dimensions to plot (e.g., [0,1,2]). If None, plot all d dims.
+        start_window:
+            First window index to use.
+        max_windows:
+            Number of windows to include (None -> all windows).
+        include_gaps:
+            If True and s>0, insert NaNs for the s missing time steps between windows.
+        x_axis:
+            - "time": use true time indices t (burn_in + i*(w+s) + k)
+            - "relative": relabel points 0..T-1 (after concatenation)
+        """
+        if self.ds is None:
+            raise RuntimeError("Call .load() first")
+
+        X = np.asarray(self.ds.X, dtype=float)
+        N, w, d = X.shape
+
+        burn_in = int(self.ds.meta.get("burn_in", 0))
+        s = int(self.ds.meta.get("s", 0))
+
+        t, x = _reconstruct_time_series_from_windows(
+            X,
+            burn_in=burn_in,
+            s=s,
+            include_gaps=include_gaps,
+            start_window=start_window,
+            max_windows=max_windows,
+        )
+
+        if x_axis == "relative":
+            t_plot = np.arange(len(t), dtype=int)
+        else:
+            t_plot = t
+
+        if dims is None:
+            dims = list(range(d))
+        dims = [int(j) for j in dims]
+        for j in dims:
+            if not (0 <= j < d):
+                raise ValueError(f"dim {j} out of range [0,{d - 1}]")
+
+        fig, ax = plt.subplots(figsize=figsize)
+        for j in dims:
+            ax.plot(t_plot, x[:, j], label=f"x[{j}]")
+
+        ax.set_xlabel("t" if x_axis == "time" else "index")
+        ax.set_ylabel("X_t")
+        if title is None:
+            title = f"VARMA process view from windows (start_window={start_window}, max_windows={max_windows})"
+        ax.set_title(title)
+        ax.grid(True, alpha=0.25)
+        ax.legend(ncol=min(len(dims), 3), fontsize=9)
+        fig.tight_layout()
+        return fig
