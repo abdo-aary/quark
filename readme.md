@@ -1,6 +1,7 @@
-# Effective & Efficient QRC (research codebase)
+# QuaRK: A Quantum Reservoir Kernel for Time Series Learning
 
-This repository implements the experimental pipeline accompanying the paper *Efficient and Effective Quantum Reservoir Kernels*: we generate (or ingest) time-series datasets, build quantum-reservoir feature maps (QRC), and learn with kernel methods (Matérn Kernel Ridge Regression) to validate the method end-to-end with reproducible, Hydra-configured runs.
+This repository implements the experimental pipeline accompanying the paper [*QuaRK: A Quantum Reservoir Kernel for Time 
+Series Learning*](https://example.com). ...
 
 ## Project layout
 
@@ -79,6 +80,12 @@ Outputs (written under Hydra’s run directory by default):
 - Every run is controlled by Hydra configs; configs are saved alongside outputs (Hydra `.hydra/` folder).
 - Dataset artifacts include metadata/config snapshots so experiments can be reproduced from an on-disk artifact alone.
 - The `Experiment` wrapper caches QRC features during `.fit()` so that sweeps and follow-up evaluations do not re-run expensive circuit executions.
+
+## Paper results
+- All empirical results of the paper can be found in notebooks under `notebooks/main-results.ipynb`.
+- To run the cells of such a notebook, download first `storage.zip` from the v1.0.0 release assets here 
+https://github.com/abdo-aary/effective-efficient-qrc/releases/tag/v1.0.0.
+- The zip file should be unzipped and should be `storage/` with the expected structure of subfolders and files).
 
 ## Where to look next
 
